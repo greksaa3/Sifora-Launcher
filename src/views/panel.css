@@ -158,6 +158,13 @@
   background: color-mix(in srgb, var(--sf-danger) 30%, transparent);
 }
 
+/* A smaller secondary action, for control rows that sit inside a card. */
+.sf-btn--small {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.72rem;
+  gap: 0.35rem;
+}
+
 .sf-instance__confirm {
   font-size: 0.72rem;
   color: var(--sf-text-muted);

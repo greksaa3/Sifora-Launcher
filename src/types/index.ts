@@ -457,3 +457,22 @@ export interface GenerationResult {
   fellBack: boolean
   note: string
 }
+
+/** A compiled-in endpoint preset. Constants on the Rust side, never user data. */
+export interface ProviderPreset {
+  id: string
+  label: string
+  baseUrl: string
+  note: string
+  listsPricing: boolean
+  keyless: boolean
+}
+
+/** One model a provider reports through its own `/models` endpoint. */
+export interface ModelOption {
+  id: string
+  label: string
+  /** `true` when the provider states it costs nothing, `null` when unknown. */
+  free: boolean | null
+  context: number | null
+}

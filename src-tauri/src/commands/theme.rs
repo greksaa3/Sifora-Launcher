@@ -213,6 +213,43 @@ pub fn get_ai_config(state: State<'_, AppState>) -> provider::AiConfigView {
     state.ai_config().view()
 }
 
+/// The endpoints offered as one-click presets.
+///
+/// Compiled-in constants, not user data: nothing the renderer sends can change
+/// what this returns.
+#[tauri::command]
+pub fn list_provider_presets() -> Vec<crate::theme::ProviderPreset> {
+    crate::theme::catalog::PRESETS.to_vec()
+}
+
+/// Ask a provider what models it offers.
+///
+/// The stored key is attached only when the address asked about is the address
+/// the key belongs to. The renderer never holds the key, so it cannot be made
+/// to send it somewhere new — typing a different address in the UI means the
+/// request goes out without one.
+#[tauri::command]
+pub async fn list_ai_models(
+    state: State<'_, AppState>,
+    base_url: String,
+) -> AppResult<Vec<crate::theme::ModelOption>> {
+    let stored = state.ai_config();
+    let normalised = base_url.trim().trim_end_matches('/');
+    let key = if stored.base_url.trim_end_matches('/') == normalised {
+        Some(stored.api_key.clone())
+    } else {
+        None
+    };
+    crate::theme::catalog::list_models(normalised, key.as_deref(), &state.json_http).await
+}
+
+/// Check that the saved model actually answers, without generating anything.
+#[tauri::command]
+pub async fn test_ai_connection(state: State<'_, AppState>) -> AppResult<String> {
+    let config = state.ai_config();
+    provider::test_connection(&config, &state.json_http).await
+}
+
 #[tauri::command]
 pub fn set_ai_config(state: State<'_, AppState>, config: provider::AiConfig) -> AppResult<provider::AiConfigView> {
     // Preserve the stored key when the caller sends a blank one (the UI never

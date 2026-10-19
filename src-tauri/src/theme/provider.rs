@@ -4,7 +4,7 @@
 //!
 //! * `Local` — the offline composer in [`super::generate`]. Free, instant,
 //!   zero network, always available. This is the default.
-//! * `OpenAiCompatible` — any chat-completions endpoint the *user* configures.
+//! * `OpenaiCompatible` — any chat-completions endpoint the *user* configures.
 //!   The endpoint, model name and API key live in the app data directory and
 //!   are never part of the repository. Nothing about this provider is baked
 //!   into the binary.
@@ -39,7 +39,12 @@ use crate::util;
 pub enum ProviderKind {
     #[default]
     Local,
-    OpenAiCompatible,
+    /// Spelled `Openai`, not `OpenAi`, so the wire value is exactly
+    /// `openai_compatible` — the name the renderer sends. `rename_all` splits
+    /// on capital letters, so `OpenAi` would have produced `open_ai_compatible`
+    /// and every request from the UI would have been rejected.
+    #[serde(alias = "open_ai_compatible")]
+    OpenaiCompatible,
 }
 
 /// User-supplied provider configuration.
@@ -47,16 +52,21 @@ pub enum ProviderKind {
 /// Persisted in the OS application-data directory (`ai.local.json`), which is
 /// excluded from version control. `api_key` is never serialised back to the
 /// renderer by [`AiConfigView`].
+///
+/// The wire format is camelCase to match the rest of the command surface; the
+/// snake_case aliases keep an `ai.local.json` written by an older build
+/// readable instead of silently resetting to defaults and losing the key.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, default)]
+#[serde(deny_unknown_fields, default, rename_all = "camelCase")]
 pub struct AiConfig {
     pub provider: ProviderKind,
+    #[serde(alias = "base_url")]
     pub base_url: String,
     pub model: String,
+    #[serde(alias = "api_key")]
     pub api_key: String,
+    #[serde(alias = "timeout_secs")]
     pub timeout_secs: u32,
-    /// Sent verbatim in the `X-Sifora-Temperature` style custom header slot is
-    /// not used; instead this maps to the request `temperature` field.
     pub temperature: f32,
 }
 
@@ -75,6 +85,7 @@ impl Default for AiConfig {
 
 /// Redacted view of the configuration, safe to send to the renderer.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AiConfigView {
     pub provider: ProviderKind,
     pub base_url: String,
@@ -125,9 +136,11 @@ impl AiConfig {
         };
         self.base_url = self.base_url.trim().trim_end_matches('/').to_string();
         self.model = self.model.trim().chars().take(120).collect();
-        // Only https endpoints; plain http would leak the key on the wire.
-        if !self.base_url.starts_with("https://") {
-            if self.provider == ProviderKind::OpenAiCompatible {
+        // HTTPS anywhere, or plain HTTP on loopback where there is no wire to
+        // read the key from. Anything else is dropped, and the provider falls
+        // back to the offline composer rather than talking in clear.
+        if !super::catalog::endpoint_allowed(&self.base_url) {
+            if self.provider == ProviderKind::OpenaiCompatible {
                 self.provider = ProviderKind::Local;
             }
             self.base_url.clear();
@@ -139,6 +152,7 @@ impl AiConfig {
 /// Result of a generation run, including everything the UI needs to explain
 /// what happened.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerationResult {
     pub theme: ThemeSpec,
     pub report: ValidationReport,
@@ -190,7 +204,13 @@ SCHEMA
       "image_opacity":0..1, "image_blur":0..40, "dim":-0.6..0.6 },
     "components": { "button":"solid|soft|outline|glass",
       "input":"solid|soft|outline|glass", "card":"solid|soft|outline|glass",
-      "translucency":0..1, "density":0..40 }
+      "translucency":0..1, "density":0..40 },
+    "layout": { "scale":0.8..1.4, "density":12..28,
+      "order":["appearance|instances|settings|about"], "hidden":["appearance|instances|settings|about"],
+      "shortcuts":["appearance|instances|settings|log|random-theme|toggle-background|performance"],
+      "placement":"centered|left|right|banner", "corners":"sharp|rounded|pill|squircle",
+      "motion":"still|smooth|brisk|springy|sharp", "motion_scale":0..2,
+      "label_case":"as-written|upper|title", "icon_only":bool }
   }
 }
 
@@ -200,9 +220,25 @@ GUIDANCE
 - Use 3-5 background stops that form a smooth, non-banding gradient.
 - Respect the user's words literally: mention of "dark" means dark surfaces,
   "rounded" means large radii, "mono" means a monospace family, "no animations"
-  means short durations and ambient=false.
+  means short durations, ambient=false and layout.motion="still".
 - You may invent combinations; there is no template list to choose from.
-"##;
+
+LAYOUT
+- "layout" arranges the launcher's OWN existing screens. It cannot add a screen
+  or a capability, and any name outside the lists above makes the whole layout
+  section be discarded, so only use the exact names given.
+- "order" lists every one of the four sections exactly once, most important
+  first. Use it when the user says what they reach for most.
+- "hidden" removes a section from the menu. Only do this if the user clearly
+  asked to get rid of it; "покажи всё" means an empty list.
+- "shortcuts" puts existing features as buttons on the launch screen, at most
+  six. "перенеси настройки на главный экран" means ["settings"].
+- "placement" moves where the launch content sits: "centered" is the default,
+  "left"/"right" push it aside, "banner" lays it along the bottom.
+- "corners":"pill" for round, "sharp" for square, "squircle" for very round.
+- "label_case":"upper" for everything capitalised, "title" for Initial Caps.
+- "icon_only":true drops button text and keeps the icons.
+- If the user said nothing about arrangement, omit "layout" entirely."##;
 
 /// Build the user message. The request is fenced and explicitly labelled as
 /// untrusted data so a prompt-injection attempt inside the description cannot
@@ -315,6 +351,18 @@ pub fn coerce_into_schema(raw: &serde_json::Value, description: &str) -> ThemeSp
     let components =
         merge_group(&fallback.tokens.components, tokens_node.and_then(|t| t.get("components")));
 
+    // The arrangement the model proposed. Merged field-by-field into the
+    // default, so a partial object still lands; repaired by `clamp_in_place`
+    // below, which restores the menu to a complete permutation. A model that
+    // names an unknown section or shortcut does not get a repaired layout — its
+    // whole layout object fails to decode and the default is used instead,
+    // which is the behaviour we want: a wrong name is not silently invented
+    // into a right one.
+    let layout = merge_group(
+        &fallback.tokens.layout,
+        tokens_node.and_then(|t| t.get("layout")),
+    );
+
     let name = raw
         .get("name")
         .and_then(|v| v.as_str())
@@ -345,7 +393,7 @@ pub fn coerce_into_schema(raw: &serde_json::Value, description: &str) -> ThemeSp
             decor,
             background,
             components,
-            layout: Layout::default(),
+            layout,
         },
     };
     spec.clamp_in_place();
@@ -365,7 +413,7 @@ pub async fn generate_theme(
     }
 
     let request = description.to_string();
-    if config.provider == ProviderKind::OpenAiCompatible {
+    if config.provider == ProviderKind::OpenaiCompatible {
         match generate_remote(&request, config, http).await {
             Ok(spec) => {
                 let mut spec = spec;
@@ -374,7 +422,7 @@ pub async fn generate_theme(
                     return Ok(GenerationResult {
                         theme: spec,
                         report,
-                        provider: ProviderKind::OpenAiCompatible,
+                        provider: ProviderKind::OpenaiCompatible,
                         fell_back: false,
                         note: "Тема создана моделью".into(),
                     });
@@ -399,7 +447,7 @@ pub async fn generate_theme(
                     report,
                     provider: ProviderKind::Local,
                     fell_back: true,
-                    note: format!("Модель недоступна ({}). Создана локальная тема.", err.message),
+                    note: format!("{} Тема собрана локально.", err.message),
                 });
             }
         }
@@ -416,14 +464,75 @@ pub async fn generate_theme(
     })
 }
 
+/// Ask the configured model to prove it is reachable and usable.
+///
+/// Deliberately tiny: a single-word reply is enough to distinguish "the key is
+/// wrong" from "the model is fine", which is the question someone setting up a
+/// free tier actually has. It never generates a theme, so a failure here can
+/// never leave anything half-applied.
+pub async fn test_connection(config: &AiConfig, http: &reqwest::Client) -> AppResult<String> {
+    if config.provider == ProviderKind::Local {
+        return Ok("Встроенный композитор работает всегда и офлайн".into());
+    }
+    if config.base_url.is_empty() || config.model.is_empty() {
+        return Err(AppError::invalid("Укажите адрес и модель"));
+    }
+
+    let endpoint = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+    if !super::catalog::endpoint_allowed(&endpoint) {
+        return Err(AppError::config(
+            "Адрес модели должен использовать HTTPS, либо быть локальным",
+        ));
+    }
+
+    let request = serde_json::json!({
+        "model": config.model,
+        "messages": [
+            { "role": "system", "content": "Reply with the single word: ok" },
+            { "role": "user", "content": "ping" },
+        ],
+        "max_tokens": 8,
+        "temperature": 0.0,
+    });
+
+    let mut builder = http.post(&endpoint).json(&request).timeout(std::time::Duration::from_secs(
+        config.timeout_secs.clamp(5, 300) as u64,
+    ));
+    if !config.api_key.is_empty() {
+        builder = builder.bearer_auth(&config.api_key);
+    }
+
+    let response = builder.send().await.map_err(|e| {
+        AppError::new(ErrorKind::Unreachable, "Не удалось связаться с моделью")
+            .with_detail(e.to_string())
+            .retryable(true)
+    })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let snippet: String = body.chars().take(240).collect();
+        return Err(AppError::new(
+            ErrorKind::Network,
+            super::catalog::explain_status(status.as_u16()),
+        )
+        .with_detail(format!("HTTP {} — {snippet}", status.as_u16()))
+        .retryable(status.is_server_error() || status.as_u16() == 429));
+    }
+
+    Ok(format!("{} отвечает и готов писать темы", config.model))
+}
+
 async fn generate_remote(
     description: &str,
     config: &AiConfig,
     http: &reqwest::Client,
 ) -> AppResult<ThemeSpec> {
     let endpoint = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-    if !endpoint.starts_with("https://") {
-        return Err(AppError::config("Адрес модели должен использовать HTTPS"));
+    if !super::catalog::endpoint_allowed(&endpoint) {
+        return Err(AppError::config(
+            "Адрес модели должен использовать HTTPS, либо быть локальным",
+        ));
     }
 
     let request = serde_json::json!({
@@ -454,9 +563,12 @@ async fn generate_remote(
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
         let snippet: String = body.chars().take(240).collect();
-        return Err(AppError::new(ErrorKind::Network, format!("Модель вернула ошибку {}", status.as_u16()))
-            .with_detail(snippet)
-            .retryable(status.is_server_error() || status.as_u16() == 429));
+        return Err(AppError::new(
+            ErrorKind::Network,
+            super::catalog::explain_status(status.as_u16()),
+        )
+        .with_detail(format!("HTTP {} — {snippet}", status.as_u16()))
+        .retryable(status.is_server_error() || status.as_u16() == 429));
     }
 
     let payload: serde_json::Value = response.json().await.map_err(|e| {
@@ -571,7 +683,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("ai.local.json");
         let cfg = AiConfig {
-            provider: ProviderKind::OpenAiCompatible,
+            provider: ProviderKind::OpenaiCompatible,
             base_url: "http://insecure.example/v1".into(),
             model: "x".into(),
             api_key: "secret".into(),
@@ -584,13 +696,158 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A local model server is a normal, safe target: the traffic never leaves
+    /// the machine, so the key cannot be read off the wire.
+    #[test]
+    fn a_loopback_endpoint_is_kept_even_over_plain_http() {
+        let dir = std::env::temp_dir().join("sifora-ai-cfg-loopback");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ai.local.json");
+        let cfg = AiConfig {
+            provider: ProviderKind::OpenaiCompatible,
+            base_url: "http://localhost:11434/v1".into(),
+            model: "llama3.2".into(),
+            api_key: String::new(),
+            ..AiConfig::default()
+        };
+        cfg.save(&path).unwrap();
+        let loaded = AiConfig::load(&path);
+        assert_eq!(loaded.provider, ProviderKind::OpenaiCompatible);
+        assert_eq!(loaded.base_url, "http://localhost:11434/v1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_model_can_arrange_the_interface_through_the_same_boundary() {
+        let raw = serde_json::json!({
+            "tokens": { "layout": {
+                "scale": 1.2,
+                "order": ["settings", "appearance"],
+                "shortcuts": ["settings", "log"],
+                "corners": "pill",
+                "motion": "still"
+            }}
+        });
+        let spec = coerce_into_schema(&raw, "крупные кнопки, настройки на главный экран");
+        let layout = &spec.tokens.layout;
+        assert_eq!(layout.corners, Corners::Pill);
+        assert_eq!(layout.motion, MotionStyle::Still);
+        assert!(layout.scale > 1.0);
+        assert_eq!(layout.order[0], Section::Settings);
+        assert!(layout.shortcuts.contains(&Shortcut::Log));
+        // Still a complete permutation: the two the model left out are appended.
+        assert_eq!(layout.order.len(), Section::ALL.len());
+    }
+
+    #[test]
+    fn a_model_cannot_invent_a_section_or_shortcut() {
+        let raw = serde_json::json!({
+            "tokens": { "layout": {
+                "order": ["settings", "admin-panel"],
+                "shortcuts": ["run-anything"]
+            }}
+        });
+        let spec = coerce_into_schema(&raw, "тема");
+        // The whole layout object is rejected, so the default is used. What
+        // must never happen is "admin-panel" or "run-anything" being upgraded
+        // into a real name.
+        assert_eq!(spec.tokens.layout, Layout::default());
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(!json.contains("admin-panel"), "{json}");
+        assert!(!json.contains("run-anything"), "{json}");
+    }
+
+    #[test]
+    fn the_prompt_documents_the_layout_vocabulary() {
+        // The model can only propose names it has been told about, and it can
+        // only be told about names that exist.
+        for name in ["appearance", "instances", "settings", "about"] {
+            assert!(SYSTEM_PROMPT.contains(name), "section {name} missing from prompt");
+        }
+        for name in ["random-theme", "toggle-background", "performance", "squircle"] {
+            assert!(SYSTEM_PROMPT.contains(name), "token {name} missing from prompt");
+        }
+    }
+
     #[test]
     fn api_key_is_never_serialised_to_the_view() {
         // Obviously fake value used only to prove it never leaves this function.
         let cfg = AiConfig { api_key: "not-a-real-key-000".into(), ..AiConfig::default() };
         let view = serde_json::to_string(&cfg.view()).unwrap();
         assert!(!view.contains("not-a-real-key-000"));
-        assert!(view.contains("\"has_api_key\":true"));
+        assert!(view.contains("\"hasApiKey\":true"));
+    }
+
+    /// The renderer reads `baseUrl`, not `base_url`. Getting this wrong is
+    /// invisible until something calls `.trim()` on the result and the whole
+    /// panel stops rendering, so it is pinned down here.
+    #[test]
+    fn the_config_crosses_the_wire_in_camel_case() {
+        let cfg = AiConfig {
+            provider: ProviderKind::OpenaiCompatible,
+            base_url: "https://openrouter.ai/api/v1".into(),
+            model: "m".into(),
+            timeout_secs: 45,
+            ..AiConfig::default()
+        };
+
+        let view = serde_json::to_value(cfg.view()).unwrap();
+        assert_eq!(view["baseUrl"], "https://openrouter.ai/api/v1");
+        assert_eq!(view["timeoutSecs"], 45);
+        assert!(view.get("base_url").is_none(), "snake_case leaked: {view}");
+        assert!(view.get("timeout_secs").is_none(), "snake_case leaked: {view}");
+
+        // And the direction the renderer sends.
+        let incoming: AiConfig = serde_json::from_value(serde_json::json!({
+            "provider": "openai_compatible",
+            "baseUrl": "https://openrouter.ai/api/v1",
+            "model": "m",
+            "apiKey": "k",
+            "timeoutSecs": 30,
+            "temperature": 0.5
+        }))
+        .expect("camelCase input must be accepted");
+        assert_eq!(incoming.base_url, "https://openrouter.ai/api/v1");
+        assert_eq!(incoming.timeout_secs, 30);
+        assert_eq!(incoming.api_key, "k");
+    }
+
+    /// An `ai.local.json` written before the rename must still load, or the
+    /// user's key would silently disappear on upgrade.
+    #[test]
+    fn an_older_snake_case_config_file_still_loads() {
+        let dir = std::env::temp_dir().join("sifora-ai-cfg-legacy");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ai.local.json");
+        std::fs::write(
+            &path,
+            r#"{"provider":"openai_compatible","base_url":"https://openrouter.ai/api/v1",
+                "model":"m","api_key":"legacy-key","timeout_secs":30,"temperature":0.4}"#,
+        )
+        .unwrap();
+        let loaded = AiConfig::load(&path);
+        assert_eq!(loaded.base_url, "https://openrouter.ai/api/v1");
+        assert_eq!(loaded.api_key, "legacy-key");
+        assert_eq!(loaded.timeout_secs, 30);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_generation_result_reports_camel_case_too() {
+        let mut spec = defaults::default_theme();
+        let report = validate_theme(&mut spec);
+        let value = serde_json::to_value(GenerationResult {
+            theme: spec,
+            report,
+            provider: ProviderKind::Local,
+            fell_back: true,
+            note: "n".into(),
+        })
+        .unwrap();
+        assert_eq!(value["fellBack"], true);
+        assert!(value.get("fell_back").is_none(), "snake_case leaked: {value}");
     }
 
     #[test]

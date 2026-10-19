@@ -9,6 +9,7 @@
 //! capabilities that already exist. It has no field for anything new — no
 //! action name a theme could invent, no markup, no script.
 
+pub mod catalog;
 pub mod color;
 pub mod defaults;
 pub mod generate;
@@ -19,6 +20,7 @@ pub mod provider;
 pub mod store;
 pub mod validate;
 
+pub use catalog::{ModelOption, ProviderPreset};
 pub use color::Color;
 pub use defaults::{builtin_themes, default_theme, ThemeSummary};
 pub use model::*;

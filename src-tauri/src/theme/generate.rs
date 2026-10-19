@@ -119,6 +119,8 @@ pub struct Intent {
     /// настройки на главный экран" asks about layout, not palette, and the two
     /// are worth steering independently.
     pub layout: Option<Layout>,
+    /// Layout requests, in the words used to report them back to the person.
+    pub layout_words: Vec<String>,
     /// Backdrop artwork the description asked for, if any.
     pub artwork: Option<Artwork>,
     pub artwork_strength: f32,
@@ -178,6 +180,7 @@ impl Default for Intent {
             understood: Vec::new(),
             named_style: None,
             layout: None,
+            layout_words: Vec::new(),
             artwork: None,
             artwork_strength: 0.55,
             background_lightness: None,
@@ -453,6 +456,7 @@ pub fn parse_intent(prompt: &str) -> Intent {
         for word in layout_intent.words() {
             it.note(word);
         }
+        it.layout_words = layout_intent.words().to_vec();
         it.layout = Some(layout_intent.build());
     }
 
@@ -754,6 +758,12 @@ fn compose_description(intent: &Intent) -> String {
     if intent.ambient == Some(false) {
         parts.push("статичный фон".into());
     }
+    // Arrangement is reported separately and last: it is the part of a request
+    // that a person is most likely to want to verify actually happened, because
+    // it changes where things are rather than how they look.
+    if !intent.layout_words.is_empty() {
+        parts.push(format!("раскладка: {}", intent.layout_words.join(", ")));
+    }
     if intent.understood.is_empty() {
         // Nothing was understood, so the colours and shape below were chosen
         // rather than composed. Say exactly that, and say what would help.
@@ -792,6 +802,35 @@ fn an_unrecognised_name_is_reported_rather_than_pretended() {
         "the preview must say the description was not understood, got: {}",
         spec.meta.description
     );
+}
+
+/// An arrangement request has to be visible in the preview text. The whole
+/// point of the layout vocabulary is that a person can ask for something and
+/// see that it was understood — a silently applied rearrangement is worse than
+/// no rearrangement at all.
+#[test]
+fn the_preview_says_what_was_understood_about_arrangement() {
+    let spec = compose("тёмная тема, перенеси настройки на главный экран, без анимаций");
+    assert!(
+        spec.meta.description.contains("раскладка"),
+        "layout must be reported: {}",
+        spec.meta.description
+    );
+    assert!(
+        spec.meta.description.contains("кнопки на главном экране"),
+        "the promoted shortcut must be named: {}",
+        spec.meta.description
+    );
+    assert!(spec.tokens.layout.shortcuts.contains(&Shortcut::Settings));
+
+    // A purely visual request must not grow a layout line it has no content for.
+    let visual = compose("тёмная синяя тема");
+    assert!(
+        !visual.meta.description.contains("раскладка"),
+        "no layout request, no layout line: {}",
+        visual.meta.description
+    );
+    assert_eq!(visual.tokens.layout, Layout::default());
 }
 
 /// A name that *is* known resolves to concrete tokens rather than to noise.

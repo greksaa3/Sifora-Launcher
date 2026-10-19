@@ -18,6 +18,8 @@ import {
   Image as ImageIcon,
   ImagePlus,
   Loader,
+  PlugZap,
+  RefreshCw,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -28,7 +30,14 @@ import {
 import { backgrounds, themes as themeApi } from '@/lib/ipc'
 import { formatBytes } from '@/lib/format'
 import { pushToast, reportError } from '@/stores/app'
-import type { AiConfigView, BackgroundImage, ProviderKind, ThemeSpec, ThemeSummary } from '@/types'
+import type {
+  BackgroundImage,
+  ModelOption,
+  ProviderKind,
+  ProviderPreset,
+  ThemeSpec,
+  ThemeSummary,
+} from '@/types'
 
 const props = defineProps<{
   catalog: ThemeSummary[]
@@ -187,24 +196,122 @@ const apiKey = ref('')
 const hasKey = ref(false)
 const temperature = ref(0.7)
 
+const presets = ref<ProviderPreset[]>([])
+const models = ref<ModelOption[]>([])
+const loadingModels = ref(false)
+const modelProblem = ref<string | null>(null)
+const testing = ref(false)
+const typedModel = ref(false)
+
+/** The preset whose address is currently in the field, if any. */
+const activePreset = computed(() => {
+  const url = normaliseUrl(baseUrl.value)
+  if (!url) return null
+  return presets.value.find((p) => p.baseUrl === url) ?? null
+})
+
+/** Trailing slashes make two spellings of the same address look different. */
+function normaliseUrl(value: unknown): string {
+  return typeof value === 'string' ? value.trim().replace(/\/+$/, '') : ''
+}
+
 const providerLabel = computed(() =>
   provider.value === 'local'
     ? 'Встроенный композитор — бесплатно, офлайн'
     : `Своя модель: ${model.value || 'не указана'} @ ${baseUrl.value || 'не указан адрес'}`,
 )
 
+/**
+ * Free models first, then the rest. `null` (unknown) sits with the paid ones
+ * rather than with the free ones: promising "free" on a guess is exactly the
+ * kind of small lie that makes a settings panel untrustworthy.
+ */
+const freeModels = computed(() => models.value.filter((m) => m.free === true))
+const otherModels = computed(() => models.value.filter((m) => m.free !== true))
+
+/** A saved model the provider no longer lists must stay selectable. */
+const savedModelMissing = computed(
+  () => !!model.value && !typedModel.value && !models.value.some((m) => m.id === model.value),
+)
+
 onMounted(async () => {
   try {
-    const config: AiConfigView = await themeApi.aiConfig()
-    provider.value = config.provider
-    baseUrl.value = config.baseUrl
-    model.value = config.model
-    hasKey.value = config.hasApiKey
-    temperature.value = config.temperature
+    presets.value = await themeApi.presets()
+  } catch {
+    // The panel still works as free text without presets.
+  }
+  try {
+    // The declared type is a promise, not a guarantee: anything odd in the
+    // reply is coerced here rather than trusted, so a single unexpected field
+    // can never blank the panel.
+    const config = await themeApi.aiConfig()
+    provider.value = config?.provider === 'openai_compatible' ? 'openai_compatible' : 'local'
+    baseUrl.value = asText(config?.baseUrl)
+    model.value = asText(config?.model)
+    hasKey.value = config?.hasApiKey === true
+    temperature.value = asNumber(config?.temperature, 0.7)
+    if (provider.value === 'openai_compatible' && baseUrl.value) void loadModels()
   } catch {
     // The offline composer always works; provider settings are optional.
   }
 })
+
+function asText(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+/** Fetch the provider's own model list for the address in the field. */
+async function loadModels(): Promise<void> {
+  const url = baseUrl.value.trim()
+  if (!url) return
+  loadingModels.value = true
+  modelProblem.value = null
+  try {
+    models.value = await themeApi.models(url)
+    if (!models.value.length) modelProblem.value = 'Провайдер не сообщил ни одной модели'
+  } catch (error) {
+    models.value = []
+    modelProblem.value = errorMessage(error)
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+function errorMessage(error: unknown): string {
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message)
+  }
+  return 'Не удалось получить список моделей'
+}
+
+/** One click fills the address and pulls the model list. */
+function usePreset(preset: ProviderPreset): void {
+  provider.value = 'openai_compatible'
+  baseUrl.value = preset.baseUrl
+  typedModel.value = false
+  models.value = []
+  modelProblem.value = null
+  void loadModels()
+}
+
+async function testConnection(): Promise<void> {
+  testing.value = true
+  try {
+    pushToast('info', 'Проверяю связь', 'Один короткий запрос к модели')
+    const message = await themeApi.testConnection()
+    pushToast('success', 'Связь есть', message)
+  } catch (error) {
+    modelProblem.value = errorMessage(error)
+    pushToast('error', 'Модель не ответила', errorMessage(error))
+  } finally {
+    testing.value = false
+  }
+}
 
 async function saveProvider(): Promise<void> {
   try {
@@ -355,9 +462,30 @@ const customThemes = computed(() => props.catalog.filter((t) => !t.builtin))
           :exit="{ opacity: 0, height: 0 }"
         >
           <p class="sf-card__lead sf-muted">
-            Необязательно. Любой OpenAI-совместимый адрес. Ключ хранится только в
-            папке данных приложения и никогда не попадает в сборку лаунчера.
+            Необязательно. Встроенный композитор работает всегда — модель нужна
+            только для свободных формулировок. Ключ хранится только в папке данных
+            приложения и никогда не попадает в сборку лаунчера.
           </p>
+
+          <div class="sf-presets">
+            <span class="sf-label">Готовые</span>
+            <div class="sf-presets__row">
+              <button
+                v-for="preset in presets"
+                :key="preset.id"
+                class="sf-btn sf-btn--soft sf-preset"
+                :class="{ 'sf-preset--active': activePreset?.id === preset.id }"
+                type="button"
+                @click="usePreset(preset)"
+              >
+                {{ preset.label }}
+              </button>
+            </div>
+            <p v-if="activePreset" class="sf-presets__note sf-muted">
+              {{ activePreset.note }}
+            </p>
+          </div>
+
           <div class="sf-provider__grid">
             <label class="sf-field-row">
               <span class="sf-label">Источник</span>
@@ -367,7 +495,7 @@ const customThemes = computed(() => props.catalog.filter((t) => !t.builtin))
               </select>
             </label>
             <label class="sf-field-row">
-              <span class="sf-label">Адрес (https)</span>
+              <span class="sf-label">Адрес (https или localhost)</span>
               <input
                 v-model="baseUrl"
                 class="sf-field"
@@ -375,19 +503,79 @@ const customThemes = computed(() => props.catalog.filter((t) => !t.builtin))
                 :disabled="provider === 'local'"
                 autocomplete="off"
                 spellcheck="false"
+                @change="loadModels"
               />
             </label>
+
             <label class="sf-field-row">
-              <span class="sf-label">Модель</span>
-              <input
+              <span class="sf-label">
+                Модель
+                <span
+                  v-if="freeModels.length"
+                  class="sf-provider__badge"
+                  title="Провайдер указал нулевую цену за токены"
+                >
+                  бесплатных: {{ freeModels.length }}
+                </span>
+              </span>
+              <select
+                v-if="!typedModel"
                 v-model="model"
                 class="sf-field"
-                placeholder="название модели"
+                :disabled="provider === 'local' || loadingModels"
+              >
+                <option value="" disabled>
+                  {{ loadingModels ? 'Загружаю список…' : 'Выберите модель' }}
+                </option>
+                <option v-if="savedModelMissing" :value="model">
+                  {{ model }} (сохранена)
+                </option>
+                <optgroup v-if="freeModels.length" label="Бесплатные">
+                  <option v-for="m in freeModels" :key="m.id" :value="m.id">
+                    {{ m.label }}
+                  </option>
+                </optgroup>
+                <optgroup v-if="otherModels.length" label="Остальные">
+                  <option v-for="m in otherModels" :key="m.id" :value="m.id">
+                    {{ m.label }}
+                  </option>
+                </optgroup>
+              </select>
+              <input
+                v-else
+                v-model="model"
+                class="sf-field"
+                placeholder="точное имя модели"
                 :disabled="provider === 'local'"
                 autocomplete="off"
                 spellcheck="false"
               />
             </label>
+
+            <div class="sf-provider__row">
+              <button
+                class="sf-btn sf-btn--ghost sf-btn--small"
+                type="button"
+                :disabled="provider === 'local' || loadingModels"
+                @click="loadModels"
+              >
+                <Loader v-if="loadingModels" :size="14" class="sf-spin" />
+                <RefreshCw v-else :size="14" />
+                {{ loadingModels ? 'Обновляю…' : 'Обновить список' }}
+              </button>
+              <button
+                class="sf-btn sf-btn--ghost sf-btn--small"
+                type="button"
+                @click="typedModel = !typedModel"
+              >
+                {{ typedModel ? 'Выбрать из списка' : 'Вписать вручную' }}
+              </button>
+            </div>
+
+            <p v-if="modelProblem" class="sf-provider__problem" role="status">
+              {{ modelProblem }}
+            </p>
+
             <label class="sf-field-row">
               <span class="sf-label">Ключ {{ hasKey ? '(сохранён)' : '' }}</span>
               <input
@@ -404,7 +592,26 @@ const customThemes = computed(() => props.catalog.filter((t) => !t.builtin))
               <input v-model.number="temperature" type="range" min="0" max="1.4" step="0.1" />
             </label>
           </div>
-          <button class="sf-btn sf-btn--soft" type="button" @click="saveProvider">Сохранить</button>
+
+          <div class="sf-provider__actions">
+            <button class="sf-btn sf-btn--soft" type="button" @click="saveProvider">
+              Сохранить
+            </button>
+            <button
+              class="sf-btn sf-btn--outline"
+              type="button"
+              :disabled="testing"
+              @click="testConnection"
+            >
+              <Loader v-if="testing" :size="14" class="sf-spin" />
+              <PlugZap v-else :size="14" />
+              {{ testing ? 'Проверяю…' : 'Проверить связь' }}
+            </button>
+          </div>
+          <p class="sf-card__note">
+            На бесплатном тарифе OpenRouter — до 50 запросов в сутки. Если модель
+            занята, тема всё равно будет создана локально.
+          </p>
         </motion.div>
       </AnimatePresence>
     </section>
@@ -659,6 +866,70 @@ const customThemes = computed(() => props.catalog.filter((t) => !t.builtin))
 
 .sf-field-row input[type='range'] {
   accent-color: var(--sf-accent);
+}
+
+/* --------------------------------------------------------------- presets */
+
+.sf-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.sf-presets__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.sf-preset {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.74rem;
+}
+
+.sf-preset--active {
+  border-color: var(--sf-accent);
+  color: var(--sf-accent);
+  background: color-mix(in srgb, var(--sf-accent) 14%, transparent);
+}
+
+.sf-presets__note {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  max-width: 42rem;
+}
+
+.sf-provider__badge {
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: var(--sf-radius-sm);
+  background: color-mix(in srgb, var(--sf-success) 20%, transparent);
+  color: var(--sf-success);
+  font-size: 0.64rem;
+  font-weight: var(--sf-weight-bold);
+}
+
+.sf-provider__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.sf-provider__problem {
+  margin: 0;
+  flex-basis: 100%;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--sf-warning);
+}
+
+.sf-provider__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  width: 100%;
 }
 
 /* ---------------------------------------------------------------- gallery */
