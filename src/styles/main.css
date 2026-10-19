@@ -1,0 +1,619 @@
+@import 'tailwindcss';
+
+/*
+ * Sifora design system
+ * --------------------
+ * Three layers:
+ *   1. `@layer tokens`  — the `--sf-*` custom properties a theme writes.
+ *   2. `@layer base`    — element defaults that read those properties.
+ *   3. `@layer comps`   — semantic components (panel, button, field, chip).
+ *
+ * A theme can only ever change layer 1. Layout lives in Tailwind utilities,
+ * which a theme cannot touch, and behaviour lives in the components, which a
+ * theme cannot disable.
+ */
+
+@layer tokens {
+  :root {
+    --sf-accent: #7c5cff;
+    --sf-accent-hover: #9278ff;
+    --sf-on-accent: #ffffff;
+    --sf-surface: rgb(24 26 38 / 0.72);
+    --sf-surface-raised: rgb(34 37 52 / 0.78);
+    --sf-surface-sunken: rgb(16 18 27 / 0.7);
+    --sf-text: #eef0f8;
+    --sf-text-muted: #9a9fb4;
+    --sf-border: rgb(255 255 255 / 0.1);
+    --sf-success: #4ad6a0;
+    --sf-warning: #f0b45a;
+    --sf-danger: #f06a74;
+    --sf-shadow: rgb(4 5 12 / 0.55);
+    --sf-elevation: 0.55;
+
+    --sf-radius-sm: 8px;
+    --sf-radius: 14px;
+    --sf-radius-lg: 24px;
+    --sf-radius-pill: 9999px;
+    --sf-border-width: 1px;
+    --sf-ring-width: 3px;
+
+    --sf-font: system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+    --sf-font-display: system-ui, sans-serif;
+    --sf-scale: 1;
+    --sf-weight: 400;
+    --sf-weight-bold: 650;
+    --sf-letter-spacing: 0em;
+    --sf-line-height: 1.45;
+    --sf-label-transform: none;
+
+    --sf-dur-fast: 140ms;
+    --sf-dur: 240ms;
+    --sf-dur-slow: 520ms;
+    --sf-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --sf-hover: 1;
+    --sf-hover-lift: 0px;
+    --sf-ambient: running;
+
+    --sf-grain: 0.05;
+    --sf-vignette: 0.35;
+    --sf-glow: 0.45;
+    --sf-aurora: 0.55;
+    --sf-rim: 0.25;
+    --sf-pattern-scale: 0.5;
+    --sf-pattern: none;
+    --sf-scanlines: none;
+
+    --sf-translucency: 0.72;
+    --sf-density: 16px;
+
+    --sf-bg-1: #121424;
+    --sf-bg-2: #301e5c;
+    --sf-bg-3: #143a60;
+    --sf-bg-4: #0a0c18;
+    --sf-bg-5: #0a0c18;
+    --sf-bg-angle: 145deg;
+    --sf-bg-dim: 0;
+    --sf-img-opacity: 1;
+    --sf-img-blur: 0px;
+    --sf-img-fit: cover;
+    --sf-overlay-tint: transparent;
+
+    /* derived */
+    --sf-surface-a: color-mix(in srgb, var(--sf-surface) calc(var(--sf-translucency) * 100%), transparent);
+    --sf-raised-a: color-mix(in srgb, var(--sf-surface-raised) calc(var(--sf-translucency) * 100%), transparent);
+    --sf-accent-a: color-mix(in srgb, var(--sf-accent) 22%, transparent);
+    --sf-accent-ring: color-mix(in srgb, var(--sf-accent) 45%, transparent);
+    --sf-border-strong: color-mix(in srgb, var(--sf-border) 160%, transparent);
+    --sf-shadow-color: color-mix(in srgb, var(--sf-shadow) 55%, transparent);
+    --sf-shadow-sm: 0 5px 16px var(--sf-shadow-color);
+    --sf-shadow-lg: 0 18px 52px var(--sf-shadow-color);
+    --sf-accent-glow: 0 0 0 8px var(--sf-accent-ring);
+
+    --sf-motion-off: 0;
+  }
+
+  /* Ambient movement is decorative: it stops entirely when the user (or the
+     OS) asks for reduced motion. */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --sf-motion-off: 1;
+    }
+  }
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+    margin: 0;
+  }
+
+  html {
+    font-size: calc(16px * var(--sf-scale));
+  }
+
+  body {
+    font-family: var(--sf-font);
+    font-weight: var(--sf-weight);
+    line-height: var(--sf-line-height);
+    letter-spacing: var(--sf-letter-spacing);
+    color: var(--sf-text);
+    background: var(--sf-bg-1);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+    /* The window itself is not draggable; only the title bar is. */
+    user-select: none;
+    cursor: default;
+  }
+
+  input,
+  textarea {
+    user-select: text;
+    cursor: text;
+  }
+
+  button {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: calc(var(--sf-ring-width) / 2) solid var(--sf-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--sf-accent-a);
+  }
+
+  /* Scrollbars follow the theme without extra markup. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sf-border-strong) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--sf-border-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Every transition in the app reads the theme timing and collapses to a
+     single frame when motion is disabled. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  [data-motion='off'] *,
+  [data-motion='off'] *::before,
+  [data-motion='off'] *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+@layer comps {
+  /* ------------------------------------------------------------ surfaces */
+
+  .sf-panel {
+    background: var(--sf-surface-a);
+    border: var(--sf-border-width) solid var(--sf-border);
+    border-radius: var(--sf-radius-lg);
+    box-shadow: var(--sf-shadow-lg);
+    backdrop-filter: blur(18px) saturate(120%);
+  }
+
+  .sf-panel--flat {
+    background: var(--sf-raised-a);
+    box-shadow: var(--sf-shadow-sm);
+    backdrop-filter: blur(10px);
+  }
+
+  /* A hairline highlight along the top edge, driven by `--sf-rim`. */
+  .sf-panel--rim {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .sf-panel--rim::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--sf-accent) calc(var(--sf-rim) * 100%), transparent),
+      transparent 55%
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .sf-glass {
+    background: color-mix(in srgb, var(--sf-surface-raised) calc(var(--sf-translucency) * 62%), transparent);
+    backdrop-filter: blur(24px) saturate(140%);
+  }
+
+  /* ------------------------------------------------------------- buttons */
+
+  .sf-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    padding: 0.6em 1.1em;
+    border-radius: var(--sf-radius);
+    border: var(--sf-border-width) solid transparent;
+    font-weight: var(--sf-weight-bold);
+    line-height: 1.1;
+    transition:
+      background-color var(--sf-dur-fast) var(--sf-ease),
+      border-color var(--sf-dur-fast) var(--sf-ease),
+      color var(--sf-dur-fast) var(--sf-ease),
+      transform var(--sf-dur-fast) var(--sf-ease),
+      box-shadow var(--sf-dur-fast) var(--sf-ease),
+      opacity var(--sf-dur-fast) var(--sf-ease);
+    will-change: transform;
+  }
+
+  .sf-btn:hover:not(:disabled) {
+    transform: translateY(calc(var(--sf-hover-lift) * -1));
+  }
+
+  .sf-btn:active:not(:disabled) {
+    transform: translateY(0) scale(calc(1 - 0.03 * var(--sf-hover)));
+  }
+
+  .sf-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .sf-btn--primary {
+    background: var(--sf-accent);
+    color: var(--sf-on-accent);
+    box-shadow: var(--sf-accent-glow);
+  }
+
+  .sf-btn--primary:hover:not(:disabled) {
+    background: var(--sf-accent-hover);
+  }
+
+  .sf-btn--soft {
+    background: color-mix(in srgb, var(--sf-surface-raised) 70%, transparent);
+    color: var(--sf-text);
+    border-color: var(--sf-border);
+  }
+
+  .sf-btn--soft:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--sf-surface-raised) 92%, transparent);
+    border-color: var(--sf-border-strong);
+  }
+
+  .sf-btn--outline {
+    background: transparent;
+    color: var(--sf-text);
+    border-color: var(--sf-border-strong);
+  }
+
+  .sf-btn--outline:hover:not(:disabled) {
+    background: var(--sf-accent-a);
+    border-color: var(--sf-accent);
+  }
+
+  .sf-btn--glass {
+    background: color-mix(in srgb, var(--sf-surface-raised) 55%, transparent);
+    color: var(--sf-text);
+    border-color: var(--sf-border);
+    backdrop-filter: blur(16px) saturate(130%);
+  }
+
+  .sf-btn--glass:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--sf-surface-raised) 78%, transparent);
+  }
+
+  .sf-btn--ghost {
+    background: transparent;
+    color: var(--sf-text-muted);
+    padding: 0.5em 0.7em;
+  }
+
+  .sf-btn--ghost:hover:not(:disabled) {
+    color: var(--sf-text);
+    background: color-mix(in srgb, var(--sf-text) 8%, transparent);
+  }
+
+  .sf-btn--icon {
+    padding: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--sf-radius-pill);
+    color: var(--sf-text-muted);
+  }
+
+  .sf-btn--icon:hover:not(:disabled) {
+    color: var(--sf-text);
+    background: color-mix(in srgb, var(--sf-text) 10%, transparent);
+  }
+
+  /* The hero play control.
+     Liquid glass: a very thin tint of the accent over a heavy backdrop blur,
+     a hairline rim, a specular sheen along the top edge and a soft coloured
+     bloom underneath. The background stays visible through it, which is the
+     whole point of the effect. */
+
+  .sf-play {
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6em;
+    padding: 0.78em 2.4em;
+    border-radius: var(--sf-radius-pill);
+    border: 1px solid color-mix(in srgb, var(--sf-text) 14%, transparent);
+    background:
+      linear-gradient(
+        170deg,
+        color-mix(in srgb, var(--sf-text) 9%, transparent),
+        color-mix(in srgb, var(--sf-text) 3%, transparent) 46%,
+        color-mix(in srgb, var(--sf-accent) 16%, transparent)
+      );
+    color: var(--sf-text);
+    -webkit-backdrop-filter: blur(26px) saturate(190%) brightness(1.06);
+    backdrop-filter: blur(26px) saturate(190%) brightness(1.06);
+    font-family: var(--sf-font-display);
+    font-size: clamp(1rem, 1.5vw, 1.28rem);
+    font-weight: var(--sf-weight-bold);
+    letter-spacing: 0.08em;
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 70%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--sf-text) 8%, transparent),
+      0 calc(var(--sf-glow) * 14px) calc(var(--sf-glow) * 42px)
+        color-mix(in srgb, var(--sf-accent) 40%, transparent),
+      0 8px 26px color-mix(in srgb, var(--sf-shadow) 40%, transparent);
+    transition:
+      transform var(--sf-dur) var(--sf-ease),
+      box-shadow var(--sf-dur) var(--sf-ease),
+      background-color var(--sf-dur-fast) var(--sf-ease);
+  }
+
+  /* Specular highlight that slides across the top of the pill. */
+  .sf-play::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(
+      105deg,
+      transparent 28%,
+      color-mix(in srgb, white 55%, transparent) 48%,
+      transparent 66%
+    );
+    opacity: 0.65;
+    pointer-events: none;
+    z-index: -1;
+    transition: opacity var(--sf-dur) var(--sf-ease);
+  }
+
+  .sf-play:hover:not(:disabled) {
+    transform: translateY(calc(-2px * var(--sf-hover)));
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 85%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--sf-text) 8%, transparent),
+      0 calc(var(--sf-glow) * 20px) calc(var(--sf-glow) * 56px)
+        color-mix(in srgb, var(--sf-accent) 52%, transparent),
+      0 12px 34px color-mix(in srgb, var(--sf-shadow) 45%, transparent);
+  }
+
+  .sf-play:hover:not(:disabled)::before {
+    opacity: 1;
+  }
+
+  .sf-play:active:not(:disabled) {
+    transform: translateY(0) scale(calc(1 - 0.015 * var(--sf-hover)));
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 50%, transparent),
+      0 4px 14px color-mix(in srgb, var(--sf-shadow) 40%, transparent);
+  }
+
+  .sf-play:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  /* -------------------------------------------------------------- fields */
+
+  .sf-field {
+    width: 100%;
+    padding: 0.55em 0.85em;
+    border-radius: var(--sf-radius);
+    border: var(--sf-border-width) solid var(--sf-border);
+    background: color-mix(in srgb, var(--sf-surface-sunken) 70%, transparent);
+    color: var(--sf-text);
+    font: inherit;
+    letter-spacing: inherit;
+    transition:
+      border-color var(--sf-dur-fast) var(--sf-ease),
+      background-color var(--sf-dur-fast) var(--sf-ease),
+      box-shadow var(--sf-dur-fast) var(--sf-ease);
+  }
+
+  .sf-field::placeholder {
+    color: var(--sf-text-muted);
+  }
+
+  .sf-field:focus {
+    outline: none;
+    border-color: var(--sf-accent);
+    box-shadow: 0 0 0 calc(var(--sf-ring-width) * 0.5) var(--sf-accent-ring);
+  }
+
+  /* --------------------------------------------------------------- text */
+
+  .sf-label {
+    font-size: 0.72rem;
+    font-weight: var(--sf-weight-bold);
+    letter-spacing: 0.09em;
+    text-transform: var(--sf-label-transform);
+    color: var(--sf-text-muted);
+  }
+
+  .sf-title {
+    font-family: var(--sf-font-display);
+    font-size: clamp(1.4rem, 2.4vw, 2rem);
+    font-weight: var(--sf-weight-bold);
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+
+  .sf-muted {
+    color: var(--sf-text-muted);
+  }
+
+  .sf-mono {
+    font-family: 'Consolas', 'Cascadia Mono', 'Courier New', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* -------------------------------------------------------------- chips */
+
+  .sf-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    padding: 0.16em 0.6em;
+    border-radius: var(--sf-radius-pill);
+    border: var(--sf-border-width) solid var(--sf-border);
+    background: color-mix(in srgb, var(--sf-text) 7%, transparent);
+    font-size: 0.68rem;
+    font-weight: var(--sf-weight-bold);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--sf-text-muted);
+    white-space: nowrap;
+  }
+
+  .sf-chip--accent {
+    color: var(--sf-accent);
+    border-color: color-mix(in srgb, var(--sf-accent) 40%, transparent);
+    background: var(--sf-accent-a);
+  }
+
+  .sf-chip--ok {
+    color: var(--sf-success);
+    border-color: color-mix(in srgb, var(--sf-success) 40%, transparent);
+    background: color-mix(in srgb, var(--sf-success) 14%, transparent);
+  }
+
+  .sf-chip--warn {
+    color: var(--sf-warning);
+    border-color: color-mix(in srgb, var(--sf-warning) 40%, transparent);
+    background: color-mix(in srgb, var(--sf-warning) 14%, transparent);
+  }
+
+  .sf-chip--bad {
+    color: var(--sf-danger);
+    border-color: color-mix(in srgb, var(--sf-danger) 40%, transparent);
+    background: color-mix(in srgb, var(--sf-danger) 14%, transparent);
+  }
+
+  /* ------------------------------------------------------------- status */
+
+  .sf-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.35em 0.8em 0.35em 0.65em;
+    border-radius: var(--sf-radius-pill);
+    background: var(--sf-surface-a);
+    border: var(--sf-border-width) solid var(--sf-border);
+    backdrop-filter: blur(14px);
+    font-size: 0.78rem;
+    color: var(--sf-text-muted);
+  }
+
+  .sf-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--sf-text-muted);
+    flex: none;
+  }
+
+  .sf-dot--ok {
+    background: var(--sf-success);
+  }
+  .sf-dot--busy {
+    background: var(--sf-warning);
+    animation: sf-pulse 1.4s var(--sf-ease) infinite;
+  }
+  .sf-dot--bad {
+    background: var(--sf-danger);
+  }
+
+  @keyframes sf-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.4;
+      transform: scale(0.72);
+    }
+  }
+
+  /* ------------------------------------------------------------ progress */
+
+  .sf-progress {
+    height: 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--sf-text) 12%, transparent);
+    overflow: hidden;
+  }
+
+  .sf-progress__bar {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--sf-accent), color-mix(in srgb, var(--sf-accent) 50%, var(--sf-text)));
+    transition: width var(--sf-dur) var(--sf-ease);
+  }
+
+  /* ------------------------------------------------------------- tooltip */
+
+  .sf-divider {
+    height: 1px;
+    background: var(--sf-border);
+    border: 0;
+    margin: 0;
+  }
+}
+
+@layer utilities {
+  .sf-drag-region {
+    -webkit-app-region: drag;
+  }
+
+  .sf-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  .sf-glow-text {
+    text-shadow: 0 0 calc(var(--sf-glow) * 18px) var(--sf-accent-ring);
+  }
+}

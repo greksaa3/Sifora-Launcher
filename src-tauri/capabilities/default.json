@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimal capability set. Sifora never exposes shell, filesystem or HTTP plugins to the renderer; every privileged operation goes through a Rust command with its own validation. Devtools are intentionally absent — enable `core:webview:allow-internal-toggle-devtools` locally if you need them.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-title",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized",
+    "core:event:default",
+    "core:app:allow-version"
+  ]
+}

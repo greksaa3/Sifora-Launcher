@@ -1,0 +1,51 @@
+# ---- Node / frontend ----
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Rust / Tauri ----
+src-tauri/target/
+src-tauri/gen/
+src-tauri/Cargo.lock.keep
+
+# ---- Secrets & local machine data (never commit) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+src-tauri/secrets.json
+
+# Provider configuration written by the app at runtime
+# (base URL, model name, API key).
+*.local.json
+ai.local.json
+
+# ---- User data that may contain credentials / profiles ----
+profiles/
+instances/
+backups/
+*.db
+*.sqlite
+*.sqlite3
+launcher.local.json
+sifora.local.json
+settings.json
+
+# ---- Generated theme drafts ----
+theme-drafts/
+*.sifora-theme.json
+custom-themes/
+
+# ---- OS noise ----
+.DS_Store
+Thumbs.db
+desktop.ini

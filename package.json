@@ -1,0 +1,31 @@
+{
+  "name": "sifora-launcher",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Sifora Launcher — lightweight Minecraft launcher with safe AI-driven theming",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.59.0",
+    "@tauri-apps/api": "^2.12.4",
+    "motion-v": "^2.8.0",
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/cli": "^2.12.3",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.5",
+    "vue-tsc": "^3.3.13"
+  }
+}
