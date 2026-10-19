@@ -335,6 +335,55 @@ mod tests {
     use super::*;
     use crate::theme::defaults;
 
+    /// The layout boundary, stated as a test.
+    ///
+    /// Themes rearrange capabilities; they cannot introduce one. A theme file
+    /// that names an action the launcher has never heard of must fail to
+    /// decode rather than be quietly repaired into something that runs.
+    #[test]
+    fn a_theme_cannot_invent_a_capability() {
+        let spec = defaults::default_theme();
+        let mut json = serde_json::to_value(&spec).expect("serialise");
+
+        // An action name the application does not implement.
+        json["tokens"]["layout"]["shortcuts"] = serde_json::json!(["run-anything"]);
+        assert!(
+            serde_json::from_value::<ThemeSpec>(json.clone()).is_err(),
+            "an unknown shortcut must not decode"
+        );
+
+        // A section that is not part of the launcher.
+        json["tokens"]["layout"]["order"] = serde_json::json!(["admin-panel"]);
+        assert!(
+            serde_json::from_value::<ThemeSpec>(json.clone()).is_err(),
+            "an unknown section must not decode"
+        );
+
+        // A field that is not in the schema at all.
+        json["tokens"]["layout"]["script"] = serde_json::json!("alert(1)");
+        assert!(
+            serde_json::from_value::<ThemeSpec>(json).is_err(),
+            "an unknown layout field must not decode"
+        );
+    }
+
+    /// A hand-edited theme may leave the menu order incomplete, but it must not
+    /// be able to make a section unreachable.
+    #[test]
+    fn an_incomplete_menu_order_is_repaired_rather_than_trusted() {
+        let mut layout = Layout {
+            order: vec![Section::Settings],
+            ..Layout::default()
+        };
+        layout.clamp_in_place();
+
+        assert_eq!(layout.order.len(), Section::ALL.len());
+        for section in Section::ALL {
+            assert!(layout.order.contains(&section), "{section:?} went missing");
+        }
+        assert_eq!(layout.order[0], Section::Settings, "the stated order must be kept");
+    }
+
     #[test]
     fn valid_theme_passes_without_errors() {
         let mut spec = defaults::default_theme();

@@ -345,6 +345,7 @@ pub fn coerce_into_schema(raw: &serde_json::Value, description: &str) -> ThemeSp
             decor,
             background,
             components,
+            layout: Layout::default(),
         },
     };
     spec.clamp_in_place();

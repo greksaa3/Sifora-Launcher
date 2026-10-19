@@ -18,6 +18,7 @@
 import { computed } from 'vue'
 
 import { toAssetUrl } from '@/lib/ipc'
+import ArtworkLayer from '@/components/ArtworkLayer.vue'
 import type { ThemeSpec } from '@/types'
 
 const props = defineProps<{
@@ -49,11 +50,15 @@ const auroraStrength = computed(() => props.theme?.tokens.decor.aurora ?? 0)
 const grain = computed(() => props.theme?.tokens.decor.grain ?? 0)
 const vignette = computed(() => props.theme?.tokens.decor.vignette ?? 0)
 const scanlines = computed(() => props.theme?.tokens.decor.scanlines ?? false)
+
+const artwork = computed(() => props.theme?.tokens.background.artwork ?? 'none')
+const artworkStrength = computed(() => props.theme?.tokens.background.artwork_strength ?? 0)
 </script>
 
 <template>
   <div class="sf-backdrop" aria-hidden="true">
     <div class="sf-backdrop__layer sf-backdrop__base" :data-kind="kind" />
+    <ArtworkLayer :artwork="artwork" :strength="artworkStrength" />
     <div
       class="sf-backdrop__layer sf-backdrop__aurora"
       v-show="auroraStrength > 0.01"

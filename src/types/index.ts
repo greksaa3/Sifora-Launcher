@@ -104,6 +104,35 @@ export interface Decor {
   scanlines: boolean
 }
 
+/**
+ * Large hand-built backdrop drawn behind the window.
+ *
+ * A closed union on purpose: a theme may *choose* artwork, never supply it.
+ * There is no way for a theme file to carry markup or a data URL.
+ */
+export type Artwork =
+  | 'none'
+  | 'sunburst'
+  | 'halftone'
+  | 'blocks'
+  | 'circuit'
+  | 'waves'
+  | 'confetti'
+  | 'bubbles'
+  | 'contours'
+
+export const ARTWORK_VALUES: Artwork[] = [
+  'none',
+  'sunburst',
+  'halftone',
+  'blocks',
+  'circuit',
+  'waves',
+  'confetti',
+  'bubbles',
+  'contours',
+]
+
 export interface Background {
   kind: BackgroundKind
   colors: HexColor[]
@@ -113,6 +142,57 @@ export interface Background {
   image_opacity: number
   image_blur: number
   dim: number
+  artwork: Artwork
+  artwork_strength: number
+}
+
+/**
+ * A section of the launcher a theme may reorder, hide or promote.
+ *
+ * A closed list: a theme arranges capabilities that already exist and can never
+ * introduce one. There is no field for an invented action, markup or a script.
+ */
+export type Section = 'appearance' | 'instances' | 'settings' | 'about'
+
+export const SECTION_VALUES: Section[] = ['appearance', 'instances', 'settings', 'about']
+
+/** An existing capability that may be surfaced on the home screen. */
+export type Shortcut =
+  | 'appearance'
+  | 'instances'
+  | 'settings'
+  | 'log'
+  | 'random-theme'
+  | 'toggle-background'
+  | 'performance'
+
+export const SHORTCUT_VALUES: Shortcut[] = [
+  'appearance',
+  'instances',
+  'settings',
+  'log',
+  'random-theme',
+  'toggle-background',
+  'performance',
+]
+
+export type Placement = 'centered' | 'left' | 'right' | 'banner'
+export type Corners = 'sharp' | 'rounded' | 'pill' | 'squircle'
+export type MotionStyle = 'still' | 'smooth' | 'brisk' | 'springy' | 'sharp'
+export type LabelCase = 'as-written' | 'upper' | 'title'
+
+export interface Layout {
+  scale: number
+  density: number
+  order: Section[]
+  hidden: Section[]
+  shortcuts: Shortcut[]
+  placement: Placement
+  corners: Corners
+  motion: MotionStyle
+  motion_scale: number
+  label_case: LabelCase
+  icon_only: boolean
 }
 
 export interface Components {
@@ -131,6 +211,7 @@ export interface Tokens {
   decor: Decor
   background: Background
   components: Components
+  layout: Layout
 }
 
 export interface ThemeMeta {

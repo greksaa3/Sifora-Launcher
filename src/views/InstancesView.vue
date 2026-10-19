@@ -51,11 +51,29 @@ async function reveal(instance: InstanceSummary): Promise<void> {
   }
 }
 
+/**
+ * Deleting an instance is destructive, so it asks twice in place rather than
+ * raising `window.confirm` — a browser-owned modal looks out of place in a
+ * themed desktop window and blocks the whole UI while it is up.
+ */
+const pendingRemoval = ref<string | null>(null)
+let removalTimer: ReturnType<typeof setTimeout> | null = null
+
+function armRemoval(slug: string): void {
+  pendingRemoval.value = slug
+  if (removalTimer) clearTimeout(removalTimer)
+  removalTimer = setTimeout(() => {
+    pendingRemoval.value = null
+  }, 6000)
+}
+
+function disarmRemoval(): void {
+  pendingRemoval.value = null
+  if (removalTimer) clearTimeout(removalTimer)
+}
+
 async function remove(instance: InstanceSummary): Promise<void> {
-  const worlds = `${instance.slug}/saves`
-  if (!window.confirm(`Удалить сборку ${instance.versionId}?\nМиры, настройки и моды из папки "${worlds}" будут потеряны.\nОбщие кэши лаунчера останутся.`)) {
-    return
-  }
+  disarmRemoval()
   try {
     await game.deleteInstance(instance.slug)
     pushToast('info', `Сборка ${instance.versionId} удалена`)
@@ -106,12 +124,24 @@ defineExpose({ refresh })
             <button class="sf-btn sf-btn--icon" type="button" title="Открыть папку" @click="reveal(instance)">
               <FolderOpen :size="15" />
             </button>
+            <template v-if="pendingRemoval === instance.slug">
+              <span class="sf-instance__confirm">
+                Удалить сборку и её миры?
+              </span>
+              <button class="sf-btn sf-btn--danger" type="button" @click="remove(instance)">
+                Да
+              </button>
+              <button class="sf-btn sf-btn--soft" type="button" @click="disarmRemoval">
+                Нет
+              </button>
+            </template>
             <button
+              v-else
               class="sf-btn sf-btn--icon"
               type="button"
               title="Удалить сборку"
               :disabled="instance.state === 'empty'"
-              @click="remove(instance)"
+              @click="armRemoval(instance.slug)"
             >
               <Trash2 :size="15" />
             </button>

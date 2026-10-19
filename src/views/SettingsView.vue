@@ -77,9 +77,37 @@ async function patch(changes: Partial<Settings>): Promise<void> {
   }
 }
 
-async function pickName(): Promise<void> {
-  const name = window.prompt('Ник игрока (3–16 символов: латиница, цифры, подчёркивание)', props.settings.player_name)
-  if (!name) return
+/** The nickname rules, mirrored from the Rust side so the UI can guide. */
+const NAME_PATTERN = /^[A-Za-z0-9_]{3,16}$/
+const editingName = ref(false)
+const nameDraft = ref('')
+const nameTouched = ref(false)
+
+const nameProblem = computed(() => {
+  const value = nameDraft.value.trim()
+  if (!value) return 'Введите ник'
+  if (value.length < 3) return 'Минимум 3 символа'
+  if (value.length > 16) return 'Максимум 16 символов'
+  if (!NAME_PATTERN.test(value)) return 'Только латиница, цифры и подчёркивание'
+  return ''
+})
+
+function startRename(): void {
+  nameDraft.value = props.settings.player_name
+  nameTouched.value = false
+  editingName.value = true
+}
+
+function cancelRename(): void {
+  editingName.value = false
+  nameTouched.value = false
+}
+
+async function commitRename(): Promise<void> {
+  nameTouched.value = true
+  if (nameProblem.value) return
+  const name = nameDraft.value.trim()
+  editingName.value = false
   try {
     emit('changed', await app.pickPlayerName(name))
   } catch (error) {
@@ -114,8 +142,31 @@ async function showLog(): Promise<void> {
   }
 }
 
+/**
+ * Reset asks for a second click instead of raising a native dialog.
+ *
+ * `window.confirm` renders a browser-owned modal that looks nothing like the
+ * rest of the app, blocks the event loop, and in a Tauri window it floats
+ * outside the themed surface entirely.
+ */
+const confirmingReset = ref(false)
+let resetTimer: ReturnType<typeof setTimeout> | null = null
+
+function armReset(): void {
+  confirmingReset.value = true
+  if (resetTimer) clearTimeout(resetTimer)
+  resetTimer = setTimeout(() => {
+    confirmingReset.value = false
+  }, 6000)
+}
+
+function disarmReset(): void {
+  confirmingReset.value = false
+  if (resetTimer) clearTimeout(resetTimer)
+}
+
 function resetAll(): void {
-  if (!window.confirm('Сбросить настройки и выбранную тему к значениям по умолчанию?')) return
+  disarmReset()
   void patch({
     player_name: 'Player',
     ram_mb: 2048,
@@ -144,9 +195,30 @@ function resetAll(): void {
             Автономный режим: учётная запись Mojang не требуется и никуда не передаётся.
           </span>
         </span>
-        <span class="sf-row__control">
+        <span v-if="!editingName" class="sf-row__control">
           <span class="sf-mono sf-muted">{{ settings.player_name }}</span>
-          <button class="sf-btn sf-btn--soft" type="button" @click="pickName">Изменить</button>
+          <button class="sf-btn sf-btn--soft" type="button" @click="startRename">Изменить</button>
+        </span>
+
+        <span v-else class="sf-row__control sf-row__control--edit">
+          <label class="sf-field">
+            <input
+              v-model="nameDraft"
+              class="sf-input sf-input--inline"
+              type="text"
+              maxlength="16"
+              autocomplete="off"
+              spellcheck="false"
+              autofocus
+              :aria-invalid="nameTouched && nameProblem ? 'true' : 'false'"
+              @keydown.enter.prevent="commitRename"
+              @keydown.esc.prevent="cancelRename"
+              @blur="cancelRename"
+            />
+          </label>
+          <button class="sf-btn sf-btn--primary" type="button" @click="commitRename">ОК</button>
+          <button class="sf-btn sf-btn--soft" type="button" @click="cancelRename">Отмена</button>
+          <span v-if="nameTouched && nameProblem" class="sf-field__error">{{ nameProblem }}</span>
         </span>
       </div>
       <div v-if="details" class="sf-row">
@@ -350,10 +422,17 @@ function resetAll(): void {
 
       <div class="sf-row">
         <span class="sf-row__control">
-          <button class="sf-btn sf-btn--outline" type="button" @click="resetAll">
-            <RotateCcw :size="14" />
-            Сбросить настройки
-          </button>
+          <template v-if="!confirmingReset">
+            <button class="sf-btn sf-btn--outline" type="button" @click="armReset">
+              <RotateCcw :size="14" />
+              Сбросить настройки
+            </button>
+          </template>
+          <template v-else>
+            <span class="sf-row__hint">Сбросить всё к значениям по умолчанию?</span>
+            <button class="sf-btn sf-btn--danger" type="button" @click="resetAll">Да, сбросить</button>
+            <button class="sf-btn sf-btn--soft" type="button" @click="disarmReset">Отмена</button>
+          </template>
         </span>
       </div>
     </section>

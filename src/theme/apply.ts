@@ -2,12 +2,18 @@
  * Theme application.
  *
  * Applying a theme is a *write of CSS custom properties on one element*. It
- * never touches the DOM structure, never injects a stylesheet, never changes
- * which features exist, and never leaves a half-applied state behind: the
- * previous variable map is returned so callers can undo it exactly.
+ * never injects a stylesheet, never changes which features exist, and never
+ * leaves a half-applied state behind: the previous variable map is returned so
+ * callers can undo it exactly.
+ *
+ * The one thing it does touch is the *arrangement* of what already exists —
+ * menu order, which sections are reachable, what the home screen promotes. That
+ * is driven by the validated `Layout`, which is a closed list of sections and
+ * shortcuts. A theme can decide where a feature lives; it cannot create one.
  */
 
 import { themeVariables } from './tokens'
+import { parseTheme } from './validate'
 import type { ThemeSpec } from '@/types'
 
 const root = (): HTMLElement => document.documentElement
@@ -21,18 +27,39 @@ let previous: AppliedTheme | null = null
 
 /** Write a theme's variables. Returns what was applied so it can be undone. */
 export function applyTheme(theme: ThemeSpec): AppliedTheme {
-  const vars = themeVariables(theme)
+  // Re-validate before anything is written. The backend validates too, but this
+  // is the last line before the values reach the DOM.
+  const parsed = parseTheme(theme)
+  const safe = parsed?.theme ?? theme
+  const vars = themeVariables(safe)
   const el = root()
   for (const [name, value] of Object.entries(vars)) {
     el.style.setProperty(name, value)
   }
-  el.dataset.theme = theme.meta.id
+  el.dataset.theme = safe.meta.id
   // `data-` reflects the active theme for debugging and for CSS hooks that
   // want to react to a specific built-in theme.
-  el.dataset.themeAuthor = theme.meta.author
-  const applied: AppliedTheme = { variables: vars, themeId: theme.meta.id }
+  el.dataset.themeAuthor = safe.meta.author
+  applyArrangement(el, safe)
+  const applied: AppliedTheme = { variables: vars, themeId: safe.meta.id }
   previous = applied
   return applied
+}
+
+/**
+ * Publish the validated arrangement as data attributes.
+ *
+ * These drive CSS for corner character, motion character, label case and
+ * placement. Everything here came out of the closed `Layout` schema, so CSS
+ * only ever sees a value from a fixed list.
+ */
+function applyArrangement(el: HTMLElement, theme: ThemeSpec): void {
+  const l = theme.tokens.layout
+  el.dataset.corners = l.corners
+  el.dataset.motionStyle = l.motion
+  el.dataset.labelCase = l.label_case
+  el.dataset.placement = l.placement
+  el.dataset.iconOnly = l.icon_only ? '1' : '0'
 }
 
 /** Restore the theme that was active before the last `applyTheme`. */
@@ -56,6 +83,11 @@ export function clearTheme(): void {
   }
   delete el.dataset.theme
   delete el.dataset.themeAuthor
+  delete el.dataset.corners
+  delete el.dataset.motionStyle
+  delete el.dataset.labelCase
+  delete el.dataset.placement
+  delete el.dataset.iconOnly
   previous = null
 }
 

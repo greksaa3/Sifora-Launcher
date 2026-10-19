@@ -8,7 +8,7 @@
 //! Unknown words are not an error — they simply do not steer the result, and
 //! the prompt hash provides deterministic variety for the parts that are unset.
 
-use super::model::{ComponentStyle, Easing, FontFamily};
+use super::model::{Artwork, ComponentStyle, Easing, FontFamily};
 
 /// A colour word: words -> hue anchor + saturation strength.
 pub struct HueWord {
@@ -149,6 +149,27 @@ pub struct DecorWord {
     pub vignette: Option<f32>,
     pub glow: Option<f32>,
     pub scanlines: bool,
+    /// Large backdrop artwork, for descriptions that ask for a picture rather
+    /// than a colour.
+    pub artwork: Option<ArtworkId>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub struct ArtworkId(pub u8);
+
+impl From<ArtworkId> for Artwork {
+    fn from(value: ArtworkId) -> Self {
+        match value.0 {
+            1 => Artwork::Sunburst,
+            2 => Artwork::Halftone,
+            3 => Artwork::Blocks,
+            4 => Artwork::Circuit,
+            5 => Artwork::Waves,
+            6 => Artwork::Confetti,
+            7 => Artwork::Bubbles,
+            _ => Artwork::Contours,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -166,6 +187,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: None,
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["радиальн", "radial", "круг", "излучен"],
@@ -176,6 +198,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: Some(0.4),
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["конус", "conic", "спираль", "spiral"],
@@ -186,6 +209,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: None,
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["меш", "mesh", "сетк-цвет", "blobs", "блоб", "пятн"],
@@ -196,6 +220,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: None,
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["аврора", "aurora", "сиян", "мерцан", "свечен", "glow", "свет"],
@@ -206,6 +231,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: Some(0.3),
         glow: Some(0.7),
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["изображени", "image", "фото", "picture", "обои"],
@@ -216,6 +242,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: Some(0.35),
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["точк", "dots", "dot", "крап", "крапин"],
@@ -226,6 +253,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: None,
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["сетк", "grid", "лини", "lines", "полос", "клетк"],
@@ -236,6 +264,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: None,
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["шум", "noise", "зерн", "плёночн", "пленочн", "grain", "analog", "помех"],
@@ -246,6 +275,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: Some(0.45),
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["диагонал", "diagonal", "скос"],
@@ -256,6 +286,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: None,
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["звёзд", "звезд", "star", "космос", "space", "галакт"],
@@ -266,6 +297,98 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: Some(0.5),
         glow: None,
         scanlines: false,
+        artwork: None,
+    },
+    // --- artwork -------------------------------------------------------------
+    // Words that ask for a picture on the backdrop rather than a colour. They
+    // set a pattern too, so the fine texture agrees with the large shapes.
+    DecorWord {
+        words: &["луч", "солнечн", "взрыв", "burst", "комикс", "comic", "мультяшн", "карикатур"],
+        kind: None,
+        pattern: Some(PatternId(1)),
+        aurora: None,
+        grain: Some(0.06),
+        vignette: Some(0.35),
+        glow: Some(0.5),
+        scanlines: false,
+        artwork: Some(ArtworkId(1)),
+    },
+    DecorWord {
+        words: &["растр", "полутон", "halftone", "печатн", "газетн", "принт"],
+        kind: None,
+        pattern: Some(PatternId(1)),
+        aurora: None,
+        grain: Some(0.05),
+        vignette: None,
+        glow: None,
+        scanlines: false,
+        artwork: Some(ArtworkId(2)),
+    },
+    DecorWord {
+        words: &["блок", "block", "изометр", "isometric", "пиксел", "pixel", "кубик"],
+        kind: None,
+        pattern: Some(PatternId(2)),
+        aurora: None,
+        grain: Some(0.04),
+        vignette: Some(0.3),
+        glow: None,
+        scanlines: false,
+        artwork: Some(ArtworkId(3)),
+    },
+    DecorWord {
+        words: &["схем", "чип", "микросхем", "circuit", "плат", "провод", "wire", "техно-граф"],
+        kind: None,
+        pattern: Some(PatternId(2)),
+        aurora: None,
+        grain: None,
+        vignette: Some(0.4),
+        glow: Some(0.45),
+        scanlines: false,
+        artwork: Some(ArtworkId(4)),
+    },
+    DecorWord {
+        words: &["волн", "wave", "морск", "океан", "ocean", "прибой", "рябь"],
+        kind: Some(BgId(2)),
+        pattern: None,
+        aurora: Some(0.4),
+        grain: None,
+        vignette: Some(0.3),
+        glow: None,
+        scanlines: false,
+        artwork: Some(ArtworkId(5)),
+    },
+    DecorWord {
+        words: &["конфетт", "confetti", "-party", "вечеринк", "праздник", "лохмут"],
+        kind: None,
+        pattern: None,
+        aurora: None,
+        grain: None,
+        vignette: Some(0.25),
+        glow: Some(0.4),
+        scanlines: false,
+        artwork: Some(ArtworkId(6)),
+    },
+    DecorWord {
+        words: &["пузыр", "bubble", "мыльн", "подводн"],
+        kind: Some(BgId(2)),
+        pattern: None,
+        aurora: Some(0.35),
+        grain: None,
+        vignette: Some(0.35),
+        glow: None,
+        scanlines: false,
+        artwork: Some(ArtworkId(7)),
+    },
+    DecorWord {
+        words: &["изолини", "contour", "холм", "рельеф", "карта местности"],
+        kind: None,
+        pattern: Some(PatternId(6)),
+        aurora: None,
+        grain: None,
+        vignette: Some(0.35),
+        glow: None,
+        scanlines: false,
+        artwork: Some(ArtworkId(8)),
     },
     DecorWord {
         words: &["топограф", "topo", "contour", "рельеф", "карт"],
@@ -276,6 +399,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: Some(0.3),
         glow: None,
         scanlines: false,
+        artwork: None,
     },
     DecorWord {
         words: &["сканлайн", "scanline", "crt", "строк", "ретро-экран"],
@@ -286,6 +410,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         vignette: Some(0.55),
         glow: Some(0.4),
         scanlines: true,
+        artwork: None,
     },
 ];
 

@@ -87,6 +87,8 @@ pub fn default_tokens() -> Tokens {
             image_opacity: 1.0,
             image_blur: 0.0,
             dim: 0.0,
+            artwork: Artwork::None,
+            artwork_strength: 0.55,
         },
         components: Components {
             button: ComponentStyle::Soft,
@@ -95,6 +97,7 @@ pub fn default_tokens() -> Tokens {
             translucency: 0.62,
             density: 16,
         },
+        layout: Layout::default(),
     }
 }
 
@@ -277,8 +280,10 @@ fn preset_mist(t: &mut Tokens) {
     ];
     t.background.angle = 172.0;
 
-    t.decor.aurora = 0.45;
-    t.decor.grain = 0.04;
+    t.background.artwork = Artwork::Contours;
+
+    t.background.artwork_strength = 0.30;
+    
     t.decor.vignette = 0.22;
     t.decor.glow = 0.30;
     t.decor.rim = 0.35;
@@ -322,8 +327,10 @@ fn preset_sunset(t: &mut Tokens) {
     t.components.card = ComponentStyle::Soft;
     t.components.translucency = 0.60;
 
-    t.decor.aurora = 0.32;
-    t.decor.glow = 0.55;
+    t.background.artwork = Artwork::Waves;
+
+    t.background.artwork_strength = 0.55;
+    
     t.decor.rim = 0.28;
     t.decor.grain = 0.06;
     t.decor.vignette = 0.42;
@@ -371,8 +378,10 @@ fn preset_deep_sea(t: &mut Tokens) {
     t.components.card = ComponentStyle::Soft;
     t.components.translucency = 0.66;
 
-    t.decor.aurora = 0.26;
-    t.decor.glow = 0.38;
+    t.background.artwork = Artwork::Bubbles;
+
+    t.background.artwork_strength = 0.55;
+    
     t.decor.rim = 0.20;
     t.decor.grain = 0.05;
     t.decor.vignette = 0.52;
@@ -415,8 +424,10 @@ fn preset_forest(t: &mut Tokens) {
     t.components.card = ComponentStyle::Glass;
     t.components.translucency = 0.58;
 
-    t.decor.pattern = Pattern::Dots;
-    t.decor.pattern_scale = 0.38;
+    t.background.artwork = Artwork::Blocks;
+
+    t.background.artwork_strength = 0.42;
+    
     t.decor.aurora = 0.45;
     t.decor.glow = 0.32;
     t.decor.rim = 0.18;
@@ -465,8 +476,10 @@ fn preset_neon(t: &mut Tokens) {
     t.components.card = ComponentStyle::Soft;
     t.components.translucency = 0.74;
 
-    t.decor.pattern = Pattern::Grid;
-    t.decor.pattern_scale = 0.24;
+    t.background.artwork = Artwork::Circuit;
+
+    t.background.artwork_strength = 0.62;
+    
     t.decor.scanlines = true;
     t.decor.glow = 0.85;
     t.decor.rim = 0.50;
@@ -513,8 +526,10 @@ fn preset_terminal(t: &mut Tokens) {
     t.components.card = ComponentStyle::Soft;
     t.components.translucency = 0.90;
 
-    t.decor.pattern = Pattern::Dots;
-    t.decor.pattern_scale = 0.2;
+    t.background.artwork = Artwork::Confetti;
+
+    t.background.artwork_strength = 0.35;
+    
     t.decor.glow = 0.16;
     t.decor.rim = 0.10;
     t.decor.aurora = 0.0;

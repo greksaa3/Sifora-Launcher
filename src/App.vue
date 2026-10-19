@@ -15,6 +15,7 @@ import BackdropLayer from '@/components/BackdropLayer.vue'
 import BackgroundPicker from '@/components/BackgroundPicker.vue'
 import PlayButton from '@/components/PlayButton.vue'
 import ProgressPanel from '@/components/ProgressPanel.vue'
+import ShortcutBar from '@/components/ShortcutBar.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import VersionSelector from '@/components/VersionSelector.vue'
 import AboutView from '@/views/AboutView.vue'
@@ -22,7 +23,7 @@ import AppearanceView from '@/views/AppearanceView.vue'
 import InstancesView from '@/views/InstancesView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 
-import { app, game, themes as themeApi } from '@/lib/ipc'
+import { app, game, themes as themeApi, themes } from '@/lib/ipc'
 import {
   activeTheme,
   bootstrap,
@@ -56,7 +57,7 @@ import {
   loading,
 } from '@/stores/versions'
 import { applyTheme } from '@/theme/apply'
-import type { BackgroundImage, ReleaseType, ThemeSummary, VersionRow } from '@/types'
+import type { BackgroundImage, ReleaseType, Shortcut, ThemeSummary, VersionRow } from '@/types'
 
 /* ------------------------------------------------------------------ state */
 
@@ -230,10 +231,60 @@ function dismissProgress(): void {
 }
 
 const gameDataDir = computed(() => `${bootstrap.value?.dataDir ?? ''}/game`)
+
+/* --------------------------------------------------------------- shortcuts */
+
+/**
+ * Capabilities the active theme promoted onto the launch screen.
+ *
+ * Every entry is an action this launcher already performs; the theme decides
+ * which ones are worth surfacing, not what they do.
+ */
+const shortcuts = computed<Shortcut[]>(() => activeTheme.value?.tokens.layout.shortcuts ?? [])
+
+async function runShortcut(shortcut: Shortcut): Promise<void> {
+  switch (shortcut) {
+    case 'appearance':
+      view.value = 'themes'
+      break
+    case 'settings':
+      view.value = 'settings'
+      break
+    case 'instances':
+      view.value = 'instances'
+      break
+    case 'log':
+      view.value = 'about'
+      break
+    case 'toggle-background':
+      pickerOpen.value = !pickerOpen.value
+      break
+    case 'random-theme': {
+      const pool = themeCatalog.value.filter((t) => t.id !== activeTheme.value?.meta.id)
+      if (!pool.length) return
+      const pick = pool[Math.floor(Math.random() * pool.length)]
+      try {
+        onThemeApplied(await themeApi.get(pick.id))
+      } catch (e) {
+        reportError(e)
+      }
+      break
+    }
+    case 'performance':
+      try {
+        settings.value = await themes.setForceReduceMotion(
+          !settings.value?.force_reduce_motion,
+        )
+      } catch (e) {
+        reportError(e)
+      }
+      break
+  }
+}
 </script>
 
 <template>
-  <div class="sf-app">
+  <div class="sf-app" :data-placement="activeTheme?.tokens?.layout?.placement ?? 'centered'">
     <BackdropLayer
       :theme="activeTheme"
       :image-path="backgroundImage?.path ?? null"
@@ -308,7 +359,7 @@ const gameDataDir = computed(() => `${bootstrap.value?.dataDir ?? ''}/game`)
         <AppearanceView
           v-else-if="view === 'themes'"
           :catalog="themeCatalog"
-          :active-id="settings?.theme_id ?? ''"
+          :active-id="activeTheme?.meta.id ?? settings?.theme_id ?? ''"
           :can-undo="false"
           :images="customImages"
           :preset-id="settings?.theme_id ?? null"
@@ -350,6 +401,8 @@ const gameDataDir = computed(() => `${bootstrap.value?.dataDir ?? ''}/game`)
           @select="onSelect"
           @retry="loadVersions(true)"
         />
+
+        <ShortcutBar :shortcuts="shortcuts" @run="runShortcut" />
       </div>
     </main>
 
@@ -367,6 +420,7 @@ const gameDataDir = computed(() => `${bootstrap.value?.dataDir ?? ''}/game`)
       :view="view"
       :instance-count="instances"
       :custom-theme-count="customThemeCount"
+      :layout="activeTheme?.tokens.layout ?? null"
       :version="bootstrap?.version ?? '0.1.0'"
       @update:open="menuOpen = $event"
       @select="view = $event"

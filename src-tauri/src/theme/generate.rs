@@ -21,6 +21,69 @@ use super::model::*;
 
 /// Everything the prompt can steer.
 #[derive(Debug, Clone)]
+/// A style people refer to by name rather than by description.
+///
+/// "В стиле бэкрумса" is how the request is actually phrased. Describing it
+/// back as a list of colours is not something the composer can guess at, so
+/// the names it knows are listed here explicitly and everything else is
+/// reported back to the user rather than invented.
+pub struct NamedStyle {
+    pub name: &'static str,
+    pub aliases: &'static [&'static str],
+    /// Accent hues, in the order the style prefers them.
+    pub hues: &'static [f32],
+    pub sat: f32,
+    pub dark: Option<bool>,
+    pub family: Option<FontFamily>,
+    pub component_style: Option<ComponentStyle>,
+    /// Added to the computed radius bias rather than replacing it.
+    pub radius: Option<f32>,
+    pub glass: bool,
+    /// The backdrop that gives the style its silhouette.
+    ///
+    /// This is original artwork drawn by the renderer, not anybody's existing
+    /// illustrations. A named creator's own drawings are their copyright and
+    /// are not something a launcher can ship.
+    pub artwork: Artwork,
+    pub artwork_strength: f32,
+    /// Background lightness as a percentage, so a style can be a bold field
+    /// rather than a subtle gradient.
+    pub background_lightness: Option<f32>,
+}
+
+pub const NAMED_STYLES: &[NamedStyle] = &[
+    NamedStyle {
+        name: "бэкрум",
+        aliases: &["бэкрум", "бекрум", "bekrum"],
+        // Warm comic-panel yellow, pushed to a bold field of colour with dark
+        // outlines rather than a subtle gradient.
+        hues: &[42.0, 26.0, 58.0],
+        sat: 0.95,
+        dark: Some(false),
+        family: Some(FontFamily::Segoe),
+        component_style: Some(ComponentStyle::Solid),
+        radius: Some(0.9),
+        glass: false,
+        artwork: Artwork::Sunburst,
+        artwork_strength: 0.9,
+        background_lightness: Some(0.74),
+    },
+    NamedStyle {
+        name: "майнкрафт",
+        aliases: &["майнкрафт", "minecraft", "ваниль", "vanilla"],
+        hues: &[96.0, 26.0],
+        sat: 0.62,
+        dark: Some(false),
+        family: None,
+        component_style: Some(ComponentStyle::Solid),
+        radius: Some(-0.8),
+        glass: false,
+        artwork: Artwork::Blocks,
+        artwork_strength: 0.6,
+        background_lightness: Some(0.42),
+    },
+];
+
 pub struct Intent {
     pub accent_hues: Vec<f32>,
     pub accent_sat: f32,
@@ -50,6 +113,36 @@ pub struct Intent {
     /// Explicit "make it light" flag (as opposed to the general lightness shift).
     pub light_mode: Option<bool>,
     pub dark_mode: Option<bool>,
+    /// How the interface itself should be arranged.
+    ///
+    /// Separate from colour on purpose: "сделай кнопки крупнее и перенеси
+    /// настройки на главный экран" asks about layout, not palette, and the two
+    /// are worth steering independently.
+    pub layout: Option<Layout>,
+    /// Backdrop artwork the description asked for, if any.
+    pub artwork: Option<Artwork>,
+    pub artwork_strength: f32,
+    /// Forces the base background lightness, letting a style be a bold field
+    /// of colour instead of a subtle gradient.
+    pub background_lightness: Option<f32>,
+    /// Words the description actually contained that the composer understood.
+    ///
+    /// Without this the composer cannot tell "тёмная бирюзовая тема" apart from
+    /// a proper noun it has never heard of, and answers both with the same
+    /// confident invention.
+    pub understood: Vec<String>,
+    /// Named styles the description referred to rather than described.
+    pub named_style: Option<&'static str>,
+}
+
+impl Intent {
+    /// Record a hit so the composer can tell "nothing recognised" from "lots
+    /// recognised". `word` is the matched fragment, for the preview.
+    fn note(&mut self, word: &str) {
+        if !self.understood.iter().any(|w| w == word) {
+            self.understood.push(word.to_string());
+        }
+    }
 }
 
 impl Default for Intent {
@@ -82,6 +175,12 @@ impl Default for Intent {
             component_style: None,
             light_mode: None,
             dark_mode: None,
+            understood: Vec::new(),
+            named_style: None,
+            layout: None,
+            artwork: None,
+            artwork_strength: 0.55,
+            background_lightness: None,
         }
     }
 }
@@ -158,6 +257,41 @@ pub fn parse_intent(prompt: &str) -> Intent {
     for (_, hue, sat) in &hits {
         it.accent_hues.push(*hue);
         it.accent_sat = it.accent_sat.max(*sat);
+        it.note("цвет");
+    }
+
+    // --- named styles ------------------------------------------------------
+    // "в стиле X" is how people actually ask. A name the composer knows is
+    // turned into concrete tokens; one it does not is reported as such instead
+    // of being quietly replaced by something unrelated.
+    for style in NAMED_STYLES {
+        if contains(&text, style.aliases.iter().find(|a| contains(&text, a)).copied().unwrap_or("")) {
+            it.named_style = Some(style.name);
+            it.note(style.name);
+            for hue in style.hues {
+                it.accent_hues.push(*hue);
+            }
+            it.accent_sat = it.accent_sat.max(style.sat);
+            if let Some(dark) = style.dark {
+                it.dark_mode = Some(dark);
+            }
+            if let Some(family) = style.family {
+                it.family = Some(family);
+            }
+            if let Some(style_kind) = style.component_style {
+                it.component_style = Some(style_kind);
+            }
+            if let Some(radius) = style.radius {
+                it.radius_bias = radius;
+            }
+            if style.glass {
+                it.glass = true;
+            }
+            it.artwork = Some(style.artwork);
+            it.artwork_strength = style.artwork_strength;
+            it.background_lightness = style.background_lightness;
+            break;
+        }
     }
 
     // --- mood --------------------------------------------------------------
@@ -167,14 +301,17 @@ pub fn parse_intent(prompt: &str) -> Intent {
                 it.lightness_shift += word.lightness;
                 it.accent_sat = (it.accent_sat + word.saturation).clamp(0.05, 1.0);
                 it.contrast_shift += word.contrast;
+                it.note(needle);
             }
         }
     }
     if contains(&text, "светл") || contains(&text, "light mode") || contains(&text, "дневн") {
         it.light_mode = Some(true);
+        it.note("светлая");
     }
     if contains(&text, "тёмн") || contains(&text, "темн") || contains(&text, "dark") || contains(&text, "ночн") {
         it.dark_mode = Some(true);
+        it.note("тёмная");
     }
     if it.light_mode == Some(true) && it.dark_mode == Some(true) {
         // Contradictory wording: prefer the explicit "light" reading.
@@ -191,6 +328,7 @@ pub fn parse_intent(prompt: &str) -> Intent {
                     it.glass = true;
                     it.glass_bias += 0.25;
                 }
+                it.note(needle);
             }
         }
     }
@@ -208,6 +346,7 @@ pub fn parse_intent(prompt: &str) -> Intent {
                 it.spacing += word.spacing;
                 it.scale += word.scale;
                 it.uppercase |= word.uppercase;
+                it.note(needle);
             }
         }
     }
@@ -252,6 +391,11 @@ pub fn parse_intent(prompt: &str) -> Intent {
                     it.glow = Some(it.glow.unwrap_or(0.4).max(v));
                 }
                 it.scanlines |= word.scanlines;
+                if let Some(art) = word.artwork {
+                    it.artwork.get_or_insert(art.into());
+                    it.artwork_strength = it.artwork_strength.max(0.7);
+                }
+                it.note(needle);
             }
         }
     }
@@ -269,6 +413,7 @@ pub fn parse_intent(prompt: &str) -> Intent {
                 if let Some(a) = word.ambient {
                     it.ambient = Some(a);
                 }
+                it.note(needle);
             }
         }
     }
@@ -281,6 +426,7 @@ pub fn parse_intent(prompt: &str) -> Intent {
                 if let Some(s) = word.style {
                     it.component_style.get_or_insert(component_style_from_id(s));
                 }
+                it.note(needle);
             }
         }
     }
@@ -298,12 +444,35 @@ pub fn parse_intent(prompt: &str) -> Intent {
     }
     // Hex glued to punctuation is handled by the character filter above.
 
+    // --- interface arrangement --------------------------------------------------
+    // Read separately from colour: "крупные кнопки и перенеси настройки на
+    // главный экран" is a request about layout, and mixing it into the visual
+    // tokens made both harder to steer.
+    let layout_intent = crate::theme::layout::parse_layout(&text);
+    if !layout_intent.is_empty() {
+        for word in layout_intent.words() {
+            it.note(word);
+        }
+        it.layout = Some(layout_intent.build());
+    }
+
     // Deterministic variety for unset dimensions.
     //
     // Two different prompts must not collapse into the same theme, so anything
     // the description left open is chosen from a stable hash of the prompt
     // rather than from a single default. This is what makes the composer feel
     // like it is composing instead of filling in blanks.
+    //
+    // This runs even when nothing in the description was recognised. Honesty
+    // is handled by the preview saying so, not by withholding variety — an
+    // honest "I did not understand this" next to a varied guess is more useful
+    // than the same neutral theme for every prompt that was misread.
+    apply_variety(&mut it, &mut next_random);
+    it
+}
+
+/// Fill in the dimensions the description left open, from a stable hash.
+fn apply_variety(it: &mut Intent, next_random: &mut impl FnMut() -> f32) {
     if it.accent_hues.is_empty() {
         it.accent_hues.push((next_random() * 360.0).floor());
         it.accent_sat = 0.55 + next_random() * 0.3;
@@ -340,7 +509,6 @@ pub fn parse_intent(prompt: &str) -> Intent {
         it.family = Some(FAMILIES[(next_random() * FAMILIES.len() as f32) as usize % FAMILIES.len()]);
     }
     it.radius_bias += next_random() * 0.8 - 0.4;
-    it
 }
 
 /// Harmony offset for the background gradient relative to the accent.
@@ -400,7 +568,12 @@ pub fn compose(prompt: &str) -> ThemeSpec {
     // Background family: a tinted near-black or a tinted near-white.
     let bg_light = if light { 0.90 } else { 0.08 };
     let shift = intent.lightness_shift.clamp(-0.3, 0.3);
-    let bg_base_l = (bg_light + shift * 0.5).clamp(0.04, 0.94);
+    let bg_base_l = match intent.background_lightness {
+        // A named style owns its backdrop completely; the description's
+        // lightness shifts are secondary to it.
+        Some(l) => l.clamp(0.04, 0.94),
+        None => (bg_light + shift * 0.5).clamp(0.04, 0.94),
+    };
 
     let bg1 = hsl(backdrop_hue, sat * 0.55, bg_base_l.clamp(0.04, 0.2));
     let bg2 = hsl(
@@ -491,6 +664,9 @@ pub fn compose(prompt: &str) -> ThemeSpec {
         ANGLES[((seed / 5) as usize) % ANGLES.len()]
     };
     tokens.background.dim = if dark { 0.0 } else { -0.02 };
+    tokens.layout = intent.layout.clone().unwrap_or_default();
+    tokens.background.artwork = intent.artwork.unwrap_or(Artwork::None);
+    tokens.background.artwork_strength = intent.artwork_strength;
     tokens.background.image = None;
 
     // --- components --------------------------------------------------------
@@ -578,8 +754,18 @@ fn compose_description(intent: &Intent) -> String {
     if intent.ambient == Some(false) {
         parts.push("статичный фон".into());
     }
+    if intent.understood.is_empty() {
+        // Nothing was understood, so the colours and shape below were chosen
+        // rather than composed. Say exactly that, and say what would help.
+        return "Описание не распознано — цвета и форма подобраны на глаз. \
+                Опишите точнее: цвет, настроение, форму панелей, шрифт."
+            .into();
+    }
+    if let Some(style) = intent.named_style {
+        return format!("В стиле «{style}»: {}", if parts.is_empty() { "базовые значения".into() } else { parts.join(", ") });
+    }
     if parts.is_empty() {
-        "Сгенерировано из вашего описания".into()
+        format!("Распознано: {}", intent.understood.join(", "))
     } else {
         format!("Сгенерировано из описания: {}", parts.join(", "))
     }
@@ -590,7 +776,105 @@ mod tests {
     use super::*;
     use crate::theme::validate::validate_theme;
 
-    #[test]
+    /// The bug that prompted all of this: asking for a named style the composer
+/// had no entry for returned a confident theme with no warning.
+#[test]
+fn an_unrecognised_name_is_reported_rather_than_pretended() {
+    // "бэкрумс" is understood because "бэкрум" is a known style; a name that is
+    // not in the table must not silently produce an unrelated palette.
+    let intent = parse_intent("в стиле василисы");
+    assert!(intent.understood.is_empty(), "got {:?}", intent.understood);
+    assert_eq!(intent.named_style, None);
+
+    let spec = compose("в стиле василисы");
+    assert!(
+        spec.meta.description.contains("не распознано"),
+        "the preview must say the description was not understood, got: {}",
+        spec.meta.description
+    );
+}
+
+/// A name that *is* known resolves to concrete tokens rather than to noise.
+#[test]
+fn a_known_named_style_produces_its_own_palette() {
+    let intent = parse_intent("тема в стиле бэкрумс");
+    assert_eq!(intent.named_style, Some("бэкрум"));
+    assert!(!intent.understood.is_empty());
+    assert!(
+        intent.accent_hues.iter().all(|h| *h < 70.0),
+        "expected warm hues, got {:?}",
+        intent.accent_hues
+    );
+    assert_eq!(intent.artwork, Some(Artwork::Sunburst));
+
+    let spec = compose("тема в стиле бэкрумс");
+    assert!(spec.meta.description.contains("бэкрум"), "got: {}", spec.meta.description);
+
+    // And it must not look like the neon answer the user actually complained about.
+    let mut check = spec;
+    assert!(validate_theme(&mut check).is_valid());
+    let (h, _, _) = check.tokens.palette.accent.hsl();
+    assert!(
+        !(250.0..320.0).contains(&h),
+        "a Bekrum theme must not come out violet, hue was {h}"
+    );
+    assert_eq!(check.tokens.background.artwork, Artwork::Sunburst);
+}
+
+/// Every built-in theme has to be recognisable by its backdrop, not just its
+/// colour. Six themes that differ only in hue are one theme.
+#[test]
+fn builtin_themes_have_distinct_backdrops() {
+    let all = defaults::builtin_themes();
+    let mut seen: Vec<Artwork> = all.iter().map(|t| t.tokens.background.artwork).collect();
+    let total = seen.len();
+    seen.dedup();
+    assert!(
+        seen.len() >= total - 1,
+        "backdrops collapsed: {:?}",
+        all.iter().map(|t| (t.meta.id.as_str(), t.tokens.background.artwork)).collect::<Vec<_>>()
+    );
+    assert!(
+        all.iter().filter(|t| t.tokens.background.artwork != Artwork::None).count() >= 5,
+        "most built-in themes need a backdrop of their own"
+    );
+}
+
+/// Every alias must resolve, in either script and whatever the case.
+#[test]
+fn every_named_style_alias_resolves() {
+    for style in NAMED_STYLES {
+        for alias in style.aliases {
+            for prompt in [format!("в стиле {alias}"), format!("тема как у {alias}"), alias.to_uppercase()] {
+                let intent = parse_intent(&prompt);
+                assert_eq!(
+                    intent.named_style,
+                    Some(style.name),
+                    "«{prompt}» did not resolve to «{}» (understood: {:?})",
+                    style.name,
+                    intent.understood
+                );
+            }
+        }
+    }
+}
+
+/// A description that says nothing recognisable must not look like a hit.
+#[test]
+fn gibberish_does_not_produce_a_confident_result() {
+    for prompt in ["кхм", "asdfgh", "блаблабла", "🙂"] {
+        let spec = compose(prompt);
+        assert!(
+            spec.meta.description.contains("не распознано"),
+            "«{prompt}» should be reported as unrecognised, got: {}",
+            spec.meta.description
+        );
+        let mut check = spec;
+        assert!(validate_theme(&mut check).is_valid(), "still has to be a usable theme");
+    }
+}
+
+#[test]
     fn short_prompt_still_produces_a_valid_theme() {
         let mut spec = compose("синий");
         assert!(validate_theme(&mut spec).is_valid());

@@ -300,6 +300,52 @@ pub struct Motion {
     pub hover_intensity: f32,
 }
 
+/// A large, hand-built backdrop drawn behind the whole window.
+///
+/// A palette alone reads as the same product in a different colour. These give
+/// each theme a silhouette you can recognise before you read a word of text.
+///
+/// It is a closed enum on purpose, for the same reason the rest of the schema
+/// is: a theme may *choose* artwork, never supply it. There is no path by which
+/// a theme file can carry markup, a data URL or a script.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Artwork {
+    /// No artwork; the gradient stands on its own.
+    #[default]
+    None,
+    /// Comic-book sunburst radiating from the top centre.
+    Sunburst,
+    /// Halftone dot screen, like printed comics.
+    Halftone,
+    /// Chunky isometric blocks.
+    Blocks,
+    /// Circuit traces with pads and vias.
+    Circuit,
+    /// Soft overlapping waves.
+    Waves,
+    /// Scattered confetti shards.
+    Confetti,
+    /// Rising bubbles.
+    Bubbles,
+    /// Flowing topographic contour lines.
+    Contours,
+}
+
+impl Artwork {
+    pub const ALL: [Artwork; 9] = [
+        Artwork::None,
+        Artwork::Sunburst,
+        Artwork::Halftone,
+        Artwork::Blocks,
+        Artwork::Circuit,
+        Artwork::Waves,
+        Artwork::Confetti,
+        Artwork::Bubbles,
+        Artwork::Contours,
+    ];
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Decor {
@@ -335,6 +381,16 @@ pub struct Background {
     pub image_blur: f32,
     /// Uniform darkening/lightening applied over the background, -0.6..=0.6.
     pub dim: f32,
+    /// Large hand-built backdrop drawn behind the window.
+    #[serde(default)]
+    pub artwork: Artwork,
+    /// 0..=1 strength of the artwork.
+    #[serde(default = "default_artwork_strength")]
+    pub artwork_strength: f32,
+}
+
+fn default_artwork_strength() -> f32 {
+    0.55
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -359,6 +415,145 @@ pub struct Tokens {
     pub decor: Decor,
     pub background: Background,
     pub components: Components,
+    pub layout: Layout,
+}
+
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+/// A section of the launcher a theme is allowed to reorder, hide or promote.
+///
+/// A closed list by design. A theme may *arrange* capabilities that already
+/// exist; it can never introduce one, and there is no field here that carries
+/// markup, a URL or an action name invented by the theme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Section {
+    Appearance,
+    Instances,
+    Settings,
+    About,
+}
+
+impl Section {
+    pub const ALL: [Section; 4] = [
+        Section::Appearance,
+        Section::Instances,
+        Section::Settings,
+        Section::About,
+    ];
+}
+
+/// An existing capability that may be surfaced on the home screen.
+///
+/// Every one of these already exists in the application. This enum is a way to
+/// decide *where* a feature appears, never what it does — which is what keeps
+/// this an arrangement of known behaviour instead of an extension point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Shortcut {
+    Appearance,
+    Instances,
+    Settings,
+    Log,
+    RandomTheme,
+    ToggleBackground,
+    Performance,
+}
+
+impl Shortcut {
+    pub const ALL: [Shortcut; 7] = [
+        Shortcut::Appearance,
+        Shortcut::Instances,
+        Shortcut::Settings,
+        Shortcut::Log,
+        Shortcut::RandomTheme,
+        Shortcut::ToggleBackground,
+        Shortcut::Performance,
+    ];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Placement {
+    /// Content centred, the default launcher shape.
+    Centered,
+    /// Content pushed to the left edge, artwork on the right.
+    Left,
+    /// Content pushed to the right edge.
+    Right,
+    /// Wide artwork band with content along the bottom.
+    Banner,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Corners {
+    Sharp,
+    Rounded,
+    Pill,
+    Squircle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MotionStyle {
+    Still,
+    Smooth,
+    Brisk,
+    Springy,
+    Sharp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LabelCase {
+    AsWritten,
+    Upper,
+    Title,
+}
+
+/// How the interface itself is arranged, as opposed to how it is coloured.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Layout {
+    /// Global UI multiplier, 0.8..=1.4.
+    pub scale: f32,
+    /// Spacing unit in px, 12..=28.
+    pub density: u16,
+    /// Section order in the menu. Repaired to a complete permutation.
+    pub order: Vec<Section>,
+    /// Sections to keep out of the menu.
+    pub hidden: Vec<Section>,
+    /// Capabilities promoted to the home screen.
+    pub shortcuts: Vec<Shortcut>,
+    pub placement: Placement,
+    pub corners: Corners,
+    pub motion: MotionStyle,
+    /// Multiplier on every transition duration, 0..=2.
+    pub motion_scale: f32,
+    pub label_case: LabelCase,
+    /// Render controls as icon-only, dropping their text labels.
+    pub icon_only: bool,
+}
+
+impl Default for Layout {
+    fn default() -> Self {
+        Layout {
+            scale: 1.0,
+            density: 16,
+            order: Section::ALL.to_vec(),
+            hidden: Vec::new(),
+            shortcuts: Vec::new(),
+            placement: Placement::Centered,
+            corners: Corners::Rounded,
+            motion: MotionStyle::Smooth,
+            motion_scale: 1.0,
+            label_case: LabelCase::AsWritten,
+            icon_only: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -439,6 +634,12 @@ impl Tokens {
         b.image_opacity = finite(b.image_opacity, 1.0).clamp(0.0, 1.0);
         b.image_blur = finite(b.image_blur, 0.0).clamp(0.0, 40.0);
         b.dim = finite(b.dim, 0.0).clamp(-0.6, 0.6);
+        b.artwork_strength = finite(b.artwork_strength, default_artwork_strength()).clamp(0.0, 1.0);
+        if b.artwork_strength <= 0.001 {
+            // Zero strength is indistinguishable from "no artwork", and keeping
+            // the layer around for it would cost a paint for nothing.
+            b.artwork = Artwork::None;
+        }
         if b.colors.is_empty() {
             b.colors.push(Color::rgb(12, 14, 20));
         }
@@ -455,6 +656,45 @@ impl Tokens {
         let c = &mut self.components;
         c.translucency = finite(c.translucency, 0.6).clamp(0.0, 1.0);
         c.density = c.density.clamp(0, 40);
+
+        self.layout.clamp_in_place();
+    }
+}
+
+impl Layout {
+    /// Repair the arrangement into something renderable.
+    ///
+    /// The menu order is the sharp edge here: it is the one list a theme fills
+    /// in itself, so it is rebuilt rather than trusted. Unknown entries are
+    /// dropped by the enum decoder before they get this far, duplicates are
+    /// collapsed, and anything missing is appended in the default order. The
+    /// result is always a complete permutation of [`Section::ALL`], which is
+    /// what stops a hand-edited theme from hiding the whole menu.
+    pub fn clamp_in_place(&mut self) {
+        self.scale = finite(self.scale, 1.0).clamp(0.8, 1.4);
+        self.density = self.density.clamp(12, 28);
+        self.motion_scale = finite(self.motion_scale, 1.0).clamp(0.0, 2.0);
+
+        let mut order: Vec<Section> = Vec::with_capacity(Section::ALL.len());
+        for section in std::mem::take(&mut self.order) {
+            if !order.contains(&section) {
+                order.push(section);
+            }
+        }
+        for section in Section::ALL {
+            if !order.contains(&section) {
+                order.push(section);
+            }
+        }
+        self.order = order;
+
+        self.hidden.retain(|s| Section::ALL.contains(s));
+        self.hidden.dedup();
+
+        self.shortcuts.retain(|s| Shortcut::ALL.contains(s));
+        self.shortcuts.dedup();
+        // A home screen with a wall of buttons is not a home screen.
+        self.shortcuts.truncate(6);
     }
 }
 

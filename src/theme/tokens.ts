@@ -76,7 +76,7 @@ export interface BackdropLayers {
 export function themeVariables(theme: ThemeSpec): Record<string, string> {
   const parsed = parseTheme(theme)
   const spec = parsed?.theme ?? theme
-  const { palette: p, shape: s, typography: t, motion: m, decor: d, background: b, components: c } =
+  const { palette: p, shape: s, typography: t, motion: m, decor: d, background: b, components: c, layout: l } =
     spec.tokens
 
   const stops = (b.colors.length ? b.colors : ['#0b0d16']).slice(0, 5)
@@ -153,6 +153,18 @@ export function themeVariables(theme: ThemeSpec): Record<string, string> {
     '--sf-img-opacity': String(clamp(b.image_opacity, 0, 1)),
     '--sf-img-blur': px(clamp(b.image_blur, 0, 40)),
     '--sf-img-fit': b.image_fit,
+    '--sf-art': b.artwork,
+    '--sf-art-strength': String(clamp(b.artwork_strength, 0, 1)),
+
+    /* interface arrangement */
+    '--sf-ui-scale': String(clamp(l.scale, 0.8, 1.4)),
+    '--sf-layout-density': `${clamp(Math.round(l.density), 12, 28)}px`,
+    '--sf-motion-scale': String(clamp(l.motion_scale, 0, 2)),
+    '--sf-corners': l.corners,
+    '--sf-motion-style': l.motion,
+    '--sf-label-case': l.label_case,
+    '--sf-placement': l.placement,
+    '--sf-icon-only': l.icon_only ? '1' : '0',
   }
 
   // Derived, theme-independent composites. `color-mix` is used so the exact
@@ -176,7 +188,8 @@ export function themeVariables(theme: ThemeSpec): Record<string, string> {
 /** Compose the four stacked backdrop layers for the given background spec. */
 export function backdropLayers(theme: ThemeSpec, imageUrl?: string): BackdropLayers {
   const parsed = parseTheme(theme)
-  const b = (parsed?.theme ?? theme).tokens.background
+  const tokens = (parsed?.theme ?? theme).tokens
+  const b = tokens.background
   const angle = clamp(b.angle, 0, 360)
 
   let base: string

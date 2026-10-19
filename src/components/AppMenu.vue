@@ -10,7 +10,9 @@
 import { AnimatePresence, motion } from 'motion-v'
 import { Boxes, Info, Palette, Settings, X } from '@lucide/vue'
 
-import type { Component } from 'vue'
+import { computed, type Component } from 'vue'
+
+import type { Layout, Section } from '@/types'
 
 export type ViewId = 'home' | 'themes' | 'instances' | 'settings' | 'about'
 
@@ -20,6 +22,8 @@ const props = defineProps<{
   instanceCount: number
   customThemeCount: number
   version: string
+  /** Arrangement from the active theme. Optional so the menu still renders. */
+  layout?: Layout | null
 }>()
 
 const emit = defineEmits<{
@@ -27,12 +31,31 @@ const emit = defineEmits<{
   (e: 'select', view: ViewId): void
 }>()
 
-const ITEMS: Array<{ id: ViewId; label: string; icon: Component; hint?: (p: typeof props) => string }> = [
-  { id: 'home', label: 'Запуск', icon: Boxes },
-  { id: 'themes', label: 'Оформление', icon: Palette },
-  { id: 'settings', label: 'Настройки', icon: Settings },
-  { id: 'about', label: 'О лаунчере', icon: Info },
+const ITEMS: Array<{ id: ViewId; label: string; icon: Component; section: Section }> = [
+  { id: 'home', label: 'Запуск', icon: Boxes, section: 'about' },
+  { id: 'themes', label: 'Оформление', icon: Palette, section: 'appearance' },
+  { id: 'settings', label: 'Настройки', icon: Settings, section: 'settings' },
+  { id: 'about', label: 'О лаунчере', icon: Info, section: 'about' },
 ]
+
+/**
+ * Menu contents follow the theme's arrangement.
+ *
+ * `Запуск` is always present: it is the launcher's reason to exist, and letting
+ * a theme remove the way back would strand the user inside the app. Everything
+ * else is reordered and hidden by the validated layout.
+ */
+const items = computed(() => {
+  const order = props.layout?.order ?? []
+  const hidden = props.layout?.hidden ?? []
+  const movable = ITEMS.filter((item) => item.id !== 'home' && !hidden.includes(item.section))
+  const rank = (item: (typeof ITEMS)[number]): number => {
+    const at = order.indexOf(item.section)
+    return at === -1 ? Number.MAX_SAFE_INTEGER : at
+  }
+  const sorted = [...movable].sort((a, b) => rank(a) - rank(b))
+  return [ITEMS[0], ...sorted]
+})
 
 function go(view: ViewId): void {
   emit('select', view)
@@ -81,7 +104,7 @@ function go(view: ViewId): void {
 
       <nav class="sf-drawer__nav">
         <button
-          v-for="item in ITEMS"
+          v-for="item in items"
           :key="item.id"
           class="sf-drawer__item"
           type="button"
