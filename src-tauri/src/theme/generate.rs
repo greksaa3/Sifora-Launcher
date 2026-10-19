@@ -744,4 +744,34 @@ mod tests {
         let b = compose("тёмная неоновая киберпанк тема");
         assert_eq!(a.tokens, b.tokens);
     }
+
+    /// Russian inflects. "сеткой", "стеклянными", "бирюзовая" are what users
+    /// actually type, so the lexicon has to match stems rather than whole
+    /// words or the composer silently misses half of what was asked for.
+    #[test]
+    fn inflected_russian_forms_are_understood() {
+        let intent = parse_intent("тёмная бирюзовая тема со стеклянными панелями и сеткой");
+        assert!(intent.dark_mode.unwrap_or(false), "'тёмная' must read as dark");
+        assert!(
+            intent.accent_hues.iter().any(|h| (*h - 186.0).abs() < 12.0),
+            "'бирюзовая' must map to the cyan hue, got {:?}",
+            intent.accent_hues
+        );
+        assert!(intent.glass, "'стеклянными' must request glass surfaces");
+        assert_eq!(
+            intent.pattern,
+            Some(Pattern::Grid),
+            "'сеткой' must map to the grid pattern"
+        );
+
+        assert_eq!(parse_intent("тема с точками").pattern, Some(Pattern::Dots));
+        assert_eq!(parse_intent("тема со звёздами").pattern, Some(Pattern::Stars));
+        assert_eq!(parse_intent("тема с шумом").pattern, Some(Pattern::Noise));
+        // "тёплая уютная" is a mood, not a colour: it must raise warmth and
+        // saturation rather than pick a hue of its own.
+        let mood = parse_intent("тёплая уютная тема");
+        assert!(mood.accent_sat >= 0.8, "a warm mood should saturate the accent");
+        assert!(parse_intent("моноширинный шрифт").family.is_some());
+        assert_eq!(parse_intent("без анимаций").ambient, Some(false));
+    }
 }

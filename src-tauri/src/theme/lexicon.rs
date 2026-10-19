@@ -218,7 +218,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         scanlines: false,
     },
     DecorWord {
-        words: &["точки", "dots", "dot", "крап"],
+        words: &["точк", "dots", "dot", "крап", "крапин"],
         kind: None,
         pattern: Some(PatternId(1)),
         aurora: None,
@@ -228,7 +228,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         scanlines: false,
     },
     DecorWord {
-        words: &["сетка", "grid", "линии", "lines", "полос"],
+        words: &["сетк", "grid", "лини", "lines", "полос", "клетк"],
         kind: None,
         pattern: Some(PatternId(2)),
         aurora: None,
@@ -238,7 +238,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         scanlines: false,
     },
     DecorWord {
-        words: &["шум", "noise", "зерно", "плёночн", "пленочн", "grain", "analog"],
+        words: &["шум", "noise", "зерн", "плёночн", "пленочн", "grain", "analog", "помех"],
         kind: None,
         pattern: Some(PatternId(3)),
         aurora: None,
@@ -258,7 +258,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         scanlines: false,
     },
     DecorWord {
-        words: &["звёзд", "star", "звезд", "космос", "space", "галакт"],
+        words: &["звёзд", "звезд", "star", "космос", "space", "галакт"],
         kind: None,
         pattern: Some(PatternId(5)),
         aurora: Some(0.6),
@@ -268,7 +268,7 @@ pub static DECOR_WORDS: &[DecorWord] = &[
         scanlines: false,
     },
     DecorWord {
-        words: &["топограф", "topo", "contour", "рельеф", "карта"],
+        words: &["топограф", "topo", "contour", "рельеф", "карт"],
         kind: None,
         pattern: Some(PatternId(6)),
         aurora: None,
