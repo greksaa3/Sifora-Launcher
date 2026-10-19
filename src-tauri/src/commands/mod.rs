@@ -104,6 +104,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         theme::theme_contrast,
         theme::default_theme_spec,
         theme::set_force_reduce_motion,
+        theme::set_light_rendering,
         // backgrounds
         backgrounds::pick_background_image,
         backgrounds::list_backgrounds,

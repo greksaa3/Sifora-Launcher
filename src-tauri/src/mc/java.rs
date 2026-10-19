@@ -92,7 +92,24 @@ fn classify(path: &Path) -> RuntimeKind {
 }
 
 /// Probe a candidate JDK/JRE root by running `java -version`.
+///
+/// Cached for the lifetime of the process. The answer cannot change while the
+/// launcher runs — a JDK installed afterwards is picked up on the next start —
+/// and re-running it meant spawning a child process per candidate on every
+/// launch and every visit to the settings screen.
 pub fn probe(root: &Path, source: &'static str) -> Option<JavaRuntime> {
+    static CACHE: std::sync::OnceLock<parking_lot::Mutex<std::collections::HashMap<PathBuf, Option<JavaRuntime>>>> =
+        std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+    if let Some(hit) = cache.lock().get(root) {
+        return hit.clone();
+    }
+    let found = probe_uncached(root, source);
+    cache.lock().insert(root.to_path_buf(), found.clone());
+    found
+}
+
+fn probe_uncached(root: &Path, source: &'static str) -> Option<JavaRuntime> {
     let cli = if cfg!(target_os = "windows") {
         root.join("bin").join("java.exe")
     } else {
@@ -101,13 +118,15 @@ pub fn probe(root: &Path, source: &'static str) -> Option<JavaRuntime> {
     if !cli.is_file() {
         return None;
     }
-    let output = std::process::Command::new(&cli)
-        .arg("-version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
-        .ok()?;
+    let output = crate::util::hide_console(
+        std::process::Command::new(&cli)
+            .arg("-version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped()),
+    )
+    .output()
+    .ok()?;
     let text = String::from_utf8_lossy(&output.stderr).to_string();
     let (major, version) = parse_version(&text)?;
     Some(JavaRuntime {
@@ -234,11 +253,13 @@ fn registry_java_homes() -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for key in KEYS {
             for hive in ["HKEY_LOCAL_MACHINE", "HKEY_CURRENT_USER"] {
-                let Ok(output) = std::process::Command::new("reg")
-                    .args(["query", &format!("{hive}\\{key}"), "/s"])
-                    .stdin(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .output()
+                let Ok(output) = crate::util::hide_console(
+                    std::process::Command::new("reg")
+                        .args(["query", &format!("{hive}\\{key}"), "/s"])
+                        .stdin(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null()),
+                )
+                .output()
                 else {
                     continue;
                 };
@@ -519,6 +540,41 @@ mod tests {
         );
         assert_eq!(parse_version("openjdk 17.0.9 2023-10-17"), None);
         assert_eq!(parse_version(""), None);
+    }
+
+    /// The probe cache must not change what a probe reports.
+    ///
+    /// `probe` memoises per path so a candidate is not re-executed on every
+    /// launch, but a cached answer has to be the same answer — including the
+    /// cache hit for a path that has no runtime at all.
+    #[test]
+    fn probing_is_idempotent_and_cached() {
+        let missing = std::env::temp_dir().join("sifora-java-probe-does-not-exist");
+        assert!(!missing.join("bin").join("java.exe").exists());
+
+        assert!(probe(&missing, "test").is_none());
+        assert!(probe(&missing, "test").is_none(), "a miss must stay a miss");
+
+        // A real runtime on this machine, if there is one, must report the
+        // same version on the second call as on the first.
+        let candidates: Vec<PathBuf> = candidate_roots(None)
+            .into_iter()
+            .map(|(root, _)| root)
+            .filter(|root| *root != PathBuf::from("__managed__"))
+            .collect();
+        for root in candidates {
+            let first = probe(&root, "test");
+            let second = probe(&root, "test");
+            match (first, second) {
+                (None, None) => {}
+                (Some(a), Some(b)) => {
+                    assert_eq!(a.major, b.major);
+                    assert_eq!(a.version, b.version);
+                    assert_eq!(a.path, b.path);
+                }
+                _ => panic!("cached probe disagreed with the first result for {}", root.display()),
+            }
+        }
     }
 
     #[test]

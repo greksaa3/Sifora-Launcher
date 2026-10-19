@@ -617,3 +617,46 @@
     text-shadow: 0 0 calc(var(--sf-glow) * 18px) var(--sf-accent-ring);
   }
 }
+/* ==========================================================================
+   Performance overrides
+   --------------------------------------------------------------------------
+   Deliberately unlayered. `@layer` rules lose the cascade to Vue's scoped
+   component styles, so these two blocks sit outside every layer where their
+   `!important` declarations are guaranteed to win.
+   ========================================================================== */
+
+/* ------------------------------------------------------------- idle window */
+
+/*
+ * A launcher spends most of its life behind other windows. Anything animating
+ * while hidden is pure waste, so the tree is frozen rather than reset: the
+ * first frame back is exactly the state the user left.
+ */
+[data-idle='true'],
+[data-idle='true'] *,
+[data-idle='true'] *::before,
+[data-idle='true'] *::after {
+  animation-play-state: paused !important;
+}
+
+/* -------------------------------------------------------- light rendering */
+
+/*
+ * `backdrop-filter` re-reads and re-blurs whatever sits behind an element. On
+ * a machine where WebView2 reports no graphics device at all, that runs on the
+ * CPU: six frosted panels pinned roughly one full core while the launcher was
+ * doing nothing but sit on screen. Lite mode swaps the frosting for flat
+ * translucency, which keeps the palette intact.
+ *
+ * Set from Settings -> "Облегчённая отрисовка"; on by default.
+ *
+ * Only the unprefixed property is declared on purpose. Listing
+ * `-webkit-backdrop-filter` alongside it makes the CSS minifier treat the two
+ * as one declaration, keep the prefixed variant and silently drop the standard
+ * one — at which point this rule stops overriding anything.
+ */
+[data-perf='lite'] *,
+[data-perf='lite'] *::before,
+[data-perf='lite'] *::after {
+  backdrop-filter: none !important;
+}

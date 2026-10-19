@@ -40,6 +40,23 @@
   gap: 0.2rem;
 }
 
+/* Busy indicator on the Java rescan. Transform-only, so it costs nothing. */
+.sf-spin {
+  animation: sf-spin 0.9s linear infinite;
+}
+
+@keyframes sf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-spin {
+    animation: none;
+  }
+}
+
 .sf-card__lead {
   margin: 0 0 0.7rem;
   font-size: 0.78rem;

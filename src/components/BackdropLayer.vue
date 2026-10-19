@@ -10,9 +10,10 @@
  *   pattern — the repeating tile (grid, dots, stars, ...)
  *   image   — the user's own picture, if one is selected
  *
- * A grain/vignette pass is composited on top with `mix-blend-mode`, which keeps
- * the whole thing on the compositor and avoids repainting on every animation
- * frame.
+ * A grain/vignette pass is composited on top. Everything here is deliberately
+ * free of `filter: blur()` and `mix-blend-mode`: those force a full-screen
+ * re-render on every animated frame, which measured at roughly 2.5 CPU cores
+ * of idle load before they were removed.
  */
 import { computed } from 'vue'
 
@@ -136,27 +137,53 @@ const scanlines = computed(() => props.theme?.tokens.decor.scanlines ?? false)
 
 /* ------------------------------------------------------------- aurora */
 
+/*
+ * This layer used to carry `filter: blur(30px)` together with
+ * `mix-blend-mode: screen` and an infinite full-screen animation. That
+ * combination cost about 2.5 CPU cores on a static screen: a blurred layer
+ * cannot be cached while it transforms, the blend forces the whole backdrop
+ * beneath it to be re-composited, and every `backdrop-filter` panel on top
+ * then has to re-sample that changing surface each frame.
+ *
+ * None of that is needed for the look. The blobs are radial gradients, so they
+ * are already soft; mixing the stops towards white reproduces what the
+ * `screen` blend used to contribute; and a transform-only animation on a
+ * promoted layer is close to free.
+ */
 .sf-backdrop__aurora {
   background:
-    radial-gradient(38% 30% at 24% 32%, var(--sf-bg-2), transparent 72%),
-    radial-gradient(32% 26% at 76% 62%, var(--sf-bg-3), transparent 74%),
-    radial-gradient(40% 32% at 58% 18%, var(--sf-bg-4), transparent 70%);
-  mix-blend-mode: screen;
-  animation: sf-drift 38s var(--sf-ease) infinite alternate;
+    radial-gradient(
+      42% 34% at 24% 32%,
+      color-mix(in srgb, var(--sf-bg-2) 45%, white),
+      transparent 72%
+    ),
+    radial-gradient(
+      36% 30% at 76% 62%,
+      color-mix(in srgb, var(--sf-bg-3) 45%, white),
+      transparent 74%
+    ),
+    radial-gradient(
+      44% 36% at 58% 18%,
+      color-mix(in srgb, var(--sf-bg-4) 40%, white),
+      transparent 70%
+    );
   opacity: 0;
-  /* The blur is the single most expensive thing on this screen. It is applied
-     only when the theme actually asks for a soft backdrop, and the whole
-     layer is skipped entirely when the aurora strength is zero. */
-  filter: blur(calc(var(--sf-aurora) * 30px)) saturate(125%);
+  transform: translateZ(0);
 }
 
 .sf-backdrop__aurora[data-motion='on'] {
   opacity: inherit;
+  animation: sf-drift 38s var(--sf-ease) infinite alternate;
+  /* Promote so the animation only recomposites a cached texture. */
+  will-change: transform;
 }
 
 .sf-backdrop[data-motion='on'] .sf-backdrop__aurora {
   animation-duration: calc(var(--sf-dur-slow) * 34);
 }
+
+/* Idle/performance rules live in `styles/main.css` — they have to reach every
+   component, which scoped styles cannot do. */
 
 @keyframes sf-drift {
   0% {
@@ -194,7 +221,6 @@ const scanlines = computed(() => props.theme?.tokens.decor.scanlines ?? false)
   background-image: var(--sf-pattern);
   background-size: 160px 160px;
   opacity: 0.04;
-  mix-blend-mode: overlay;
 }
 
 .sf-backdrop__scanlines {

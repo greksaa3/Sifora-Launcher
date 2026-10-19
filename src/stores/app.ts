@@ -1,7 +1,7 @@
 ﻿import { computed, reactive, readonly, ref, shallowRef, watch } from 'vue'
 
 import { app, backgrounds, onDownloadEvent, onThemeChanged, themes } from '@/lib/ipc'
-import { applyTheme, setReducedMotion } from '@/theme/apply'
+import { applyTheme, setLightRendering, setReducedMotion } from '@/theme/apply'
 import type {
   AggregateProgress,
   BackgroundImage,
@@ -88,6 +88,7 @@ export async function initialise(): Promise<void> {
 
     applyTheme(data.activeTheme)
     setReducedMotion(data.settings.force_reduce_motion)
+    setLightRendering(data.settings.light_rendering)
     applyMotionPreference()
 
     customImages.value = await backgrounds.list().catch(() => [])
@@ -154,6 +155,7 @@ export async function refreshThemeCatalog(): Promise<void> {
 export async function persistSettings(next: Settings): Promise<void> {
   settings.value = next
   applyMotionPreference()
+  setLightRendering(next.light_rendering)
 }
 
 export function setBusy(label: string | null): void {

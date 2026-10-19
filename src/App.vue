@@ -79,6 +79,31 @@ const customThemeCount = computed(() => themeCatalog.value.filter((t: ThemeSumma
 
 /* ------------------------------------------------------------- lifecycle */
 
+/**
+ * Freeze every ambient animation while the window is hidden or unfocused.
+ *
+ * A launcher spends nearly all its life behind other windows. A drifting
+ * backdrop and the glass panels stacked on top of it otherwise keep the
+ * compositor working at full frame rate for nobody to see.
+ */
+function watchWindowIdle(): () => void {
+  const root = document.documentElement
+  const update = () => {
+    root.dataset.idle = document.hidden || !document.hasFocus() ? 'true' : 'false'
+  }
+  document.addEventListener('visibilitychange', update)
+  window.addEventListener('blur', update)
+  window.addEventListener('focus', update)
+  update()
+  return () => {
+    document.removeEventListener('visibilitychange', update)
+    window.removeEventListener('blur', update)
+    window.removeEventListener('focus', update)
+  }
+}
+
+onMounted(() => watchWindowIdle())
+
 onMounted(async () => {
   watchSystemMotionPreference()
   await initialise()

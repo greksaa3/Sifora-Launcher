@@ -6,8 +6,8 @@
  * Rust before persisting it — the UI clamps as well, but the backend is the
  * authority so a hand-edited file cannot put the launcher into a bad state.
  */
-import { computed, ref, watch } from 'vue'
-import { Cpu, FolderOpen, HardDrive, Info, RotateCcw, User } from '@lucide/vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { Cpu, FolderOpen, HardDrive, Info, RefreshCw, RotateCcw, User } from '@lucide/vue'
 
 import { app, versions as versionApi } from '@/lib/ipc'
 import { formatBytes } from '@/lib/format'
@@ -24,6 +24,7 @@ const emit = defineEmits<{
 const runtimes = ref<JavaRuntime[]>([])
 const details = ref('')
 const saving = ref(false)
+const scanning = ref(false)
 
 /**
  * Slider ceiling. `navigator.deviceMemory` reports RAM in GiB and is not in
@@ -35,12 +36,30 @@ const totalRam = computed(() => {
   return nav.deviceMemory ? nav.deviceMemory * 1024 : 8192
 })
 
-watch(
-  () => props.settings,
-  async (next) => {
+/**
+ * The Java scan spawns `java -version` once per candidate runtime and consults
+ * the Windows registry. Watching the whole `settings` object ran it again on
+ * every single edit — toggling one switch meant dozens of child processes and
+ * dozens of console flashes. Nothing edited on this screen changes what the
+ * scan returns, so it runs once, and afterwards only when asked.
+ */
+async function loadRuntimes(): Promise<void> {
+  scanning.value = true
+  try {
     runtimes.value = await app.listJavaRuntimes().catch(() => [])
-    details.value = await versionApi
-      .details(next.selected_version ?? '')
+  } finally {
+    scanning.value = false
+  }
+}
+
+onMounted(loadRuntimes)
+
+watch(
+  () => props.settings.selected_version,
+  (selected) => {
+    details.value = ''
+    void versionApi
+      .details(selected ?? '')
       .then((info) => `Java ${info.javaMajor} · ${info.libraryCount} библиотек · ${info.assetIndex}`)
       .catch(() => '')
   },
@@ -219,7 +238,18 @@ function resetAll(): void {
     <section class="sf-card">
       <header class="sf-card__head">
         <h2 class="sf-card__title"><HardDrive :size="16" /> Java</h2>
-        <button class="sf-btn sf-btn--ghost" type="button" @click="showLog">Журнал</button>
+        <span class="sf-card__actions">
+          <button
+            class="sf-btn sf-btn--ghost"
+            type="button"
+            :disabled="scanning"
+            @click="loadRuntimes"
+          >
+            <RefreshCw :size="14" :class="{ 'sf-spin': scanning }" />
+            {{ scanning ? 'Поиск…' : 'Пересканировать' }}
+          </button>
+          <button class="sf-btn sf-btn--ghost" type="button" @click="showLog">Журнал</button>
+        </span>
       </header>
 
       <p class="sf-card__lead sf-muted">
@@ -277,6 +307,26 @@ function resetAll(): void {
             :aria-checked="settings.force_reduce_motion"
             :disabled="saving"
             @click="patch({ force_reduce_motion: !settings.force_reduce_motion })"
+          />
+        </span>
+      </div>
+
+      <div class="sf-row">
+        <span class="sf-row__label">
+          <span class="sf-row__title">Облегчённая отрисовка</span>
+          <span class="sf-row__hint">
+            Убирает размытие стекла за панелями. Оставьте включённым, если лаунчер
+            нагружает компьютер: без видеокарты этот эффект считается процессором.
+          </span>
+        </span>
+        <span class="sf-row__control">
+          <button
+            class="sf-switch"
+            type="button"
+            role="switch"
+            :aria-checked="settings.light_rendering"
+            :disabled="saving"
+            @click="patch({ light_rendering: !settings.light_rendering })"
           />
         </span>
       </div>

@@ -183,6 +183,7 @@ export interface Settings {
   previous_theme_id: string | null
   force_reduce_motion: boolean
   debug_overlay: boolean
+  light_rendering: boolean
 }
 
 export interface Bootstrap {

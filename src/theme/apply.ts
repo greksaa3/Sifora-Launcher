@@ -63,3 +63,15 @@ export function clearTheme(): void {
 export function setReducedMotion(enabled: boolean): void {
   root().style.setProperty('--sf-motion-off', enabled ? '1' : '0')
 }
+
+/**
+ * Switch between frosted glass and flat translucency.
+ *
+ * Every `backdrop-filter` panel re-blurs the backdrop on each composited
+ * frame. Without a usable GPU — which is exactly the case when WebView2
+ * reports no graphics device — that runs on the CPU and pins a full core for
+ * a launcher that is only supposed to sit on screen.
+ */
+export function setLightRendering(enabled: boolean): void {
+  root().dataset.perf = enabled ? 'lite' : 'full'
+}

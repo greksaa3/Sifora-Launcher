@@ -51,6 +51,14 @@ pub struct Settings {
     pub force_reduce_motion: bool,
     /// Show the frametime/hover debug readout in development builds.
     pub debug_overlay: bool,
+
+    /// Render flat translucent surfaces instead of frosted glass.
+    ///
+    /// `backdrop-filter` has to re-blur whatever sits behind every panel. On a
+    /// machine where WebView2 falls back to software rendering — which reports
+    /// no GPU device at all — that single effect cost roughly a full CPU core
+    /// while the launcher was merely open, so it is off by default.
+    pub light_rendering: bool,
 }
 
 impl Default for Settings {
@@ -72,6 +80,7 @@ impl Default for Settings {
             previous_theme_id: None,
             force_reduce_motion: false,
             debug_overlay: cfg!(debug_assertions),
+            light_rendering: true,
         }
     }
 }
@@ -153,6 +162,31 @@ mod tests {
         assert_eq!(s.schema, SCHEMA);
         assert_eq!(s.theme_id, crate::theme::defaults::DEFAULT_THEME_ID);
         assert!((512..=32_768).contains(&s.ram_mb));
+    }
+
+    /// Frosted glass is opt-out, not opt-in.
+    ///
+    /// `backdrop-filter` costs a full CPU core when WebView2 has no GPU to
+    /// composite on, and a launcher that sits idle on screen should not tax
+    /// the machine it is running on.
+    #[test]
+    fn light_rendering_is_on_by_default_and_survives_a_round_trip() {
+        assert!(Settings::default().light_rendering);
+
+        let dir = std::env::temp_dir().join("sifora-settings-light-rendering");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("settings.json");
+
+        let mut saved = Settings::default();
+        saved.light_rendering = false;
+        saved.save(&path).expect("save");
+        assert!(!Settings::load(&path).light_rendering);
+
+        saved.light_rendering = true;
+        saved.save(&path).expect("save");
+        assert!(Settings::load(&path).light_rendering);
+
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

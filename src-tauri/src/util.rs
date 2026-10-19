@@ -57,6 +57,27 @@ pub fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()>
 
 /// Escape a string for safe inclusion inside a Windows command-line argument.
 ///
+/// Suppress the console window a child process would otherwise flash.
+///
+/// `java -version`, `reg query` and `tar` are all console-subsystem programs.
+/// Opening the settings screen used to run sixteen `reg` queries plus one
+/// `java` probe per candidate runtime, and every one of them popped a black
+/// window in front of the user for the fraction of a second it lived.
+///
+/// On other platforms this is a no-op, since nothing there allocates a console
+/// for a child unless it is asked to.
+#[cfg(windows)]
+pub fn hide_console(command: &mut std::process::Command) -> &mut std::process::Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW)
+}
+
+#[cfg(not(windows))]
+pub fn hide_console(command: &mut std::process::Command) -> &mut std::process::Command {
+    command
+}
+
 /// Windows `CommandLineToArgvW` treats backslashes as escape characters when
 /// they precede a quote. Doubling trailing backslashes (and escaping embedded
 /// quotes) prevents argument-splitting surprises.

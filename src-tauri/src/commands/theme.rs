@@ -283,3 +283,15 @@ pub fn set_force_reduce_motion(state: State<'_, AppState>, value: bool) -> AppRe
     next.force_reduce_motion = value;
     state.update_settings(next)
 }
+
+/// Trade frosted glass for flat translucency.
+///
+/// Rendering quality is a performance decision, not a theme decision, so it
+/// lives in the settings rather than in the theme tokens — a theme must not be
+/// able to switch the expensive effect back on behind the user's back.
+#[tauri::command]
+pub fn set_light_rendering(state: State<'_, AppState>, value: bool) -> AppResult<Settings> {
+    let mut next = state.settings();
+    next.light_rendering = value;
+    state.update_settings(next)
+}

@@ -172,6 +172,8 @@ export const themes = {
   defaultSpec: () => call<ThemeSpec>('default_theme_spec'),
   setForceReduceMotion: (value: boolean) =>
     call<Settings>('set_force_reduce_motion', { value }),
+  setLightRendering: (value: boolean) =>
+    call<Settings>('set_light_rendering', { value }),
 }
 
 /* ----------------------------------------------------------- backgrounds */
