@@ -33,7 +33,8 @@ pub struct Settings {
     /// Download a managed Temurin runtime when none is found.
     pub auto_provision_java: bool,
 
-    pub selected_version: Option<String>,
+    /// Build the home screen last launched or selected.
+    pub selected_build: Option<String>,
     pub last_background: Option<String>,
 
     pub concurrent_downloads: u32,
@@ -70,7 +71,7 @@ impl Default for Settings {
             game_data_dir: None,
             java_path: None,
             auto_provision_java: true,
-            selected_version: None,
+            selected_build: None,
             last_background: None,
             concurrent_downloads: 8,
             close_on_launch: false,
@@ -241,7 +242,7 @@ mod tests {
             player_name: "Steve".into(),
             ram_mb: 4096,
             theme_id: "aurora".into(),
-            selected_version: Some("1.20.4".into()),
+            selected_build: Some("moya-sborka".into()),
             ..Settings::default()
         };
         original.save(&path).unwrap();
@@ -249,7 +250,7 @@ mod tests {
         assert_eq!(loaded.player_name, "Steve");
         assert_eq!(loaded.ram_mb, 4096);
         assert_eq!(loaded.theme_id, "aurora");
-        assert_eq!(loaded.selected_version.as_deref(), Some("1.20.4"));
+        assert_eq!(loaded.selected_build.as_deref(), Some("moya-sborka"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

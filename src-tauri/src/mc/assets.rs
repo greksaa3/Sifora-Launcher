@@ -104,6 +104,14 @@ pub fn asset_destination(assets_root: &Path, layout: AssetLayout, index_id: &str
     }
 }
 
+/// Where content-addressed asset objects live.
+///
+/// This is a Mojang constant and is deliberately *not* derived from
+/// `assetIndex.url`: that field points at the index document itself
+/// (`…/v1/packages/<sha1>/34.json`), so using it as a base produced
+/// `…/34.json/ab/abcdef…` — a 404 for every single asset.
+pub const RESOURCES_BASE: &str = "https://resources.download.minecraft.net";
+
 pub struct AssetPlan {
     pub index_id: String,
     pub index_url: String,
@@ -176,7 +184,13 @@ impl<'a> AssetDownloader<'a> {
             let source = objects_dir.join(&object.hash[..2]).join(&object.hash);
 
             if destination.exists() {
-                continue;
+                let stale = std::fs::metadata(&destination)
+                    .map(|m| object.size > 0 && m.len() != object.size)
+                    .unwrap_or(false);
+                if !stale {
+                    continue;
+                }
+                let _ = std::fs::remove_file(&destination);
             }
             if !source.exists() {
                 failures.push(format!("resource {key}"));

@@ -2,7 +2,7 @@
   "name": "sifora-launcher",
   "private": true,
   "version": "0.1.0",
-  "description": "Sifora Launcher — lightweight Minecraft launcher with safe AI-driven theming",
+  "description": "Sifora Launcher — lightweight Minecraft launcher with builds, mods and a safe theming system",
   "type": "module",
   "scripts": {
     "dev": "vite",

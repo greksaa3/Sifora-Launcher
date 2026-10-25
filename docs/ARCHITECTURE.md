@@ -1,7 +1,7 @@
 # Sifora Architecture
 
-This document explains the decisions behind the first stage: how the layers
-divide responsibility, and why each boundary was drawn where it was.
+This document explains the decisions behind the launcher: how the layers divide
+responsibility, and why each boundary was drawn where it was.
 
 ---
 
@@ -14,7 +14,7 @@ Vue 3 (renderer)          presentation only
 Rust commands              validation + orchestration, one function per capability
    │
    ├── mc::     Minecraft: network, disk, processes
-   ├── theme::  design tokens: schema, validation, composition
+   ├── theme::  design tokens: schema, validation, storage
    └── state::  settings, caches, HTTP clients, process slot
 ```
 
@@ -68,8 +68,8 @@ So the schema is closed in three independent ways:
 
 1. **Types** — colours are a `Color` struct, numbers are `f32`/`u16`, choices
    are Rust enums. There is no `String` that reaches CSS.
-2. **Deserialisation** — `deny_unknown_fields` on every struct. A model that
-   invents a key gets a hard error, not a silent extension point.
+2. **Deserialisation** — `deny_unknown_fields` on every struct. A hand-edited
+   file that invents a key gets a hard error, not a silent extension point.
 3. **Re-serialisation** — `Color` parses `#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`
    and emits canonical lowercase hex. A literal such as
    `"#fff; background:url(http://evil)"` fails to parse and never reaches the
@@ -80,7 +80,7 @@ So the schema is closed in three independent ways:
 
 | When | Function | Guards against |
 |---|---|---|
-| On write (IPC) | `ThemeStore::insert` | bad input from the renderer or a provider |
+| On write (IPC) | `ThemeStore::insert` | bad input from the renderer |
 | On read (disk) | `ThemeStore::load` | a hand-edited or corrupted theme file |
 | Before render | `validate_theme` + `parseTheme` (TS) | a mismatched or replaced bridge |
 
@@ -88,25 +88,23 @@ Validation is not only a filter: it *repairs* what can be repaired (contrast,
 radii ramp, NaN, missing gradient stops) and rejects what cannot. The report is
 returned to the UI so the user is told what changed.
 
-### 3.3 Why the remote model is untrusted
+### 3.3 Why an imported theme is untrusted
 
-```rust
-// system prompt: a constant in this file, never built from user input
-let request = serde_json::json!({ "messages": [
-    { "role": "system", "content": SYSTEM_PROMPT },
-    { "role": "user",   "content": user_message(description) },
-]});
-```
+There is no generator any more, so the only untrusted theme input is a file the
+user chooses. It is treated exactly like network input was:
 
-- The description is wrapped in `<request>` tags and sanitised, so an injected
-  `</request>` cannot terminate the framing. `sanitize_text` also strips `<`
-  and `>`, which makes tag injection impossible regardless of framing.
-- The reply is parsed as JSON, then fed through `coerce_into_schema`, which
-  merges only keys that already exist in a known token group and requires the
-  merged object to deserialise into the exact Rust type.
-- Remote background images are explicitly dropped: `background.image = None`.
-- Anything that fails falls back to the offline composer, and the result
-  reports `fell_back: true`.
+- The bytes are capped at 256 KiB before parsing, so a large document cannot be
+  used to stall the app.
+- `serde` with `deny_unknown_fields` on every struct means an invented key is a
+  hard error rather than a silent extension point.
+- `validate_theme` runs before the spec is handed back, so a file is held to the
+  same standard as a theme written in the editor.
+- The `meta.id` in the file is **discarded**: the store assigns a fresh id and
+  marks the theme non-built-in, so an import can never overwrite an existing
+  theme or impersonate a built-in one. A colliding name gets a numeric suffix.
+
+Export writes the same envelope the store uses (`{ "spec": … }`), so an exported
+file is byte-compatible with `themes/` and can be dropped into place by hand.
 
 ### 3.4 Why a theme cannot remove functionality
 
@@ -152,31 +150,36 @@ manifest (network, 6 h cache)
   quoting bugs cannot become argument injection. Dangerous JVM flags are
   dropped by prefix.
 
-### Instance isolation
+### Build isolation
 
 ```
 <game-data>/instances/<slug>/
-├─ instance.json     metadata (version, RAM, per-instance mods profile)
-├─ saves/ config/ resourcepacks/ shaderpacks/ screenshots/ logs/
+├─ instance.json     metadata (version, loader, RAM, Java, window, args, icon)
+├─ mods.json         the ledger of mods this build installed, and from where
+├─ saves/ config/ mods/ resourcepacks/ shaderpacks/ screenshots/ logs/
 ├─ natives/          extracted native libraries
-├─ assets/           object store links / virtual / resources
-└─ mods/             stage 2
+└─ assets/           object store links / virtual / resources
 ```
 
 Shared and immutable: `libraries/`, `assets/objects/`, `versions/`.
-Mutable and per-instance: everything else. Two versions can never corrupt each
-other's worlds, options or mod configuration.
+Mutable and per-build: everything else. Two builds can never corrupt each other's
+worlds, options or mod configuration, and each one's resolved loader profile is
+recorded in its own metadata (`launch_id`), so the loader is resolved once rather
+than guessed on every launch.
 
 ---
 
-## 5. Known limitations of stage 1
+## 5. Known limitations
 
 Stated plainly so nothing is over-claimed:
 
-- No mod loaders (Fabric, Forge, NeoForge, Quilt, OptiFine) and no mod UI.
-- No Microsoft account authentication — offline mode only.
+- **Quilt and OptiFine are not supported.** They answer with an explicit
+  "unsupported" error rather than a silent failure.
+- **CurseForge is not a mod source**; only Modrinth is.
+- **No Microsoft account authentication** — offline mode only.
 - `stop_game` does not kill the process; Minecraft manages its own shutdown,
   and the launcher reports that rather than pretending otherwise.
-- The menu button is a placeholder that explains what stage 2 will add.
 - `rd-*` and `c0.0.*` alpha builds are listed but marked unsupported: they
   predate the launch wrapper and cannot be started from a normal classpath.
+- **No theme generator.** Themes are edited by hand or imported; an imported file
+  is validated exactly like a hand-made one.

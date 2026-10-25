@@ -14,7 +14,7 @@ use crate::error::{AppError, AppResult};
 use crate::mc::download::{self, EventSink};
 use crate::mc::launcher::ProcessSlot;
 use crate::settings::Settings;
-use crate::theme::{provider::AiConfig, ThemeStore};
+use crate::theme::ThemeStore;
 
 pub const USER_AGENT: &str = concat!("SiforaLauncher/", env!("CARGO_PKG_VERSION"), " (+https://github.com/greksaa3/Sifora-Launcher)");
 
@@ -26,11 +26,9 @@ pub struct AppState {
 
     pub data_dir: PathBuf,
     pub settings_path: PathBuf,
-    pub ai_path: PathBuf,
     pub backgrounds_dir: PathBuf,
 
     settings: Mutex<Settings>,
-    ai: Mutex<AiConfig>,
     themes: Arc<ThemeStore>,
 
     /// Root for downloads: versions, libraries, assets, java, instances.
@@ -52,6 +50,8 @@ impl AppState {
         let backgrounds_dir = data_dir.join("backgrounds");
         std::fs::create_dir_all(&backgrounds_dir)
             .map_err(|e| AppError::io("Не удалось создать папку фонов", &e))?;
+        std::fs::create_dir_all(data_dir.join("build-icons"))
+            .map_err(|e| AppError::io("Не удалось создать папку иконок сборок", &e))?;
 
         let settings_path = data_dir.join("settings.json");
         let settings = Settings::load(&settings_path);
@@ -64,7 +64,6 @@ impl AppState {
             .map_err(|e| AppError::io("Не удалось создать папку игровых данных", &e))?;
 
         let themes = ThemeStore::load(data_dir)?;
-        let ai = AiConfig::load(&data_dir.join("ai.local.json"));
         let (json_http, bulk_http) = download::build_clients(USER_AGENT);
 
         Ok(AppState {
@@ -72,10 +71,8 @@ impl AppState {
             bulk_http,
             data_dir: data_dir.to_path_buf(),
             settings_path,
-            ai_path: data_dir.join("ai.local.json"),
             backgrounds_dir,
             settings: Mutex::new(settings),
-            ai: Mutex::new(ai),
             themes: Arc::new(themes),
             game_data,
             process: Arc::new(ProcessSlot::default()),
@@ -96,22 +93,18 @@ impl AppState {
         Ok(self.settings())
     }
 
-    pub fn ai_config(&self) -> AiConfig {
-        self.ai.lock().clone()
-    }
-
-    pub fn set_ai_config(&self, cfg: AiConfig) -> AppResult<AiConfig> {
-        cfg.save(&self.ai_path)?;
-        *self.ai.lock() = cfg;
-        Ok(self.ai.lock().clone())
-    }
-
     pub fn themes(&self) -> Arc<ThemeStore> {
         self.themes.clone()
     }
 
     pub fn instances_dir(&self) -> PathBuf {
         self.game_data.join("instances")
+    }
+
+    /// Build icons live under the app data directory rather than inside a build,
+    /// so their asset URL never depends on where the game data directory points.
+    pub fn build_icons_dir(&self) -> PathBuf {
+        self.data_dir.join("build-icons")
     }
 
     pub fn versions_dir(&self) -> PathBuf {

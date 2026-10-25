@@ -243,6 +243,97 @@ impl ThemeStore {
         }
         duplicates
     }
+
+    /// Register an imported theme under a fresh id.
+    ///
+    /// The id in the file is ignored. Importing must never overwrite a theme
+    /// that already exists here, and it must never be able to claim a built-in
+    /// id — so a file is data, not authority. A colliding name gets a numeric
+    /// suffix, because two identically named entries make a gallery unusable.
+    pub fn import(&self, spec: ThemeSpec) -> AppResult<ThemeSpec> {
+        let mut next = spec;
+        next.meta.builtin = false;
+        next.meta.id = defaults::new_id();
+        next.meta.created_at = util::now_rfc3339();
+
+        let taken: Vec<String> =
+            self.themes.lock().values().map(|t| t.meta.name.to_lowercase()).collect();
+        let mut name = next.meta.name.trim().to_string();
+        if name.is_empty() {
+            name = "Импортированная тема".into();
+        }
+        if taken.contains(&name.to_lowercase()) {
+            for n in 2..1000 {
+                let candidate = format!("{name} ({n})");
+                if !taken.contains(&candidate.to_lowercase()) {
+                    name = candidate;
+                    break;
+                }
+            }
+        }
+        next.meta.name = super::model::sanitize_text(&name, 48, "Импортированная тема");
+        self.insert(next)
+    }
+}
+
+/// Largest theme file we will read. A theme is a few kilobytes; a much larger
+/// document is not one, and parsing it would be a cheap way to stall the app.
+const MAX_THEME_FILE: usize = 256 * 1024;
+
+/// Serialise a theme in the same envelope the store writes.
+///
+/// Exported files are therefore byte-compatible with `themes/`, so a theme can
+/// be copied into place by hand as well as re-imported.
+pub fn to_file_bytes(spec: &ThemeSpec) -> AppResult<Vec<u8>> {
+    serde_json::to_vec_pretty(&ThemeFile { spec: spec.clone() }).map_err(|e| {
+        AppError::config("Не удалось сохранить тему в файл").with_detail(e.to_string())
+    })
+}
+
+/// Parse a theme file and validate it.
+///
+/// The bytes are never trusted: the closed schema rejects unknown fields, and
+/// validation runs before the spec is handed back, so an imported file is held
+/// to exactly the same standard as one written by the app.
+pub fn from_file_bytes(raw: &[u8]) -> AppResult<ThemeSpec> {
+    if raw.len() > MAX_THEME_FILE {
+        return Err(AppError::invalid("Файл темы слишком большой"));
+    }
+    let file: ThemeFile = serde_json::from_slice(raw).map_err(|e| {
+        AppError::invalid("Это не файл темы Sifora").with_detail(e.to_string())
+    })?;
+    let mut spec = file.spec;
+    let report = validate_theme(&mut spec);
+    if !report.is_valid() {
+        return Err(AppError::new(
+            crate::error::ErrorKind::Theme,
+            "Тема в файле не прошла проверку дизайн-системы",
+        )
+        .with_detail(format!("{:?}", report.errors)));
+    }
+    Ok(spec)
+}
+
+/// A filesystem-safe stem for an exported theme.
+///
+/// Only ASCII letters and digits survive; every other character collapses to a
+/// single `-`. A theme named in Cyrillic therefore exports as its id rather
+/// than as something the filesystem mangles.
+pub fn file_stem(spec: &ThemeSpec) -> String {
+    let mut out = String::new();
+    for ch in spec.meta.name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else if !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let trimmed = out.trim_matches('-');
+    if trimmed.is_empty() {
+        spec.meta.id.clone()
+    } else {
+        trimmed.chars().take(48).collect()
+    }
 }
 
 /// Small helper the commands use to build a brand-new custom theme from an

@@ -27,6 +27,37 @@ export type FontFamily =
   | 'courier'
   | 'times'
 
+export const FONT_FAMILIES: FontFamily[] = [
+  'system',
+  'segoe',
+  'georgia',
+  'palatino',
+  'trebuchet',
+  'verdana',
+  'tahoma',
+  'impact',
+  'consolas',
+  'cascadia',
+  'courier',
+  'times',
+]
+
+/** Human labels for the font stacks, so the editor does not show raw ids. */
+export const FONT_LABELS: Record<FontFamily, string> = {
+  system: 'Системный',
+  segoe: 'Segoe UI',
+  georgia: 'Georgia',
+  palatino: 'Palatino',
+  trebuchet: 'Trebuchet MS',
+  verdana: 'Verdana',
+  tahoma: 'Tahoma',
+  impact: 'Impact',
+  consolas: 'Consolas',
+  cascadia: 'Cascadia Code',
+  courier: 'Courier New',
+  times: 'Times New Roman',
+}
+
 export type Easing =
   | 'standard'
   | 'linear'
@@ -35,11 +66,156 @@ export type Easing =
   | 'emphasized'
   | 'spring'
 
+export const EASINGS: Easing[] = [
+  'standard',
+  'linear',
+  'decelerate',
+  'accelerate',
+  'emphasized',
+  'spring',
+]
+
+export const EASING_LABELS: Record<Easing, string> = {
+  standard: 'Обычная',
+  linear: 'Линейная',
+  decelerate: 'Замедление',
+  accelerate: 'Ускорение',
+  emphasized: 'Акцентная',
+  spring: 'Пружина',
+}
+
 export type ReducedMotionMode = 'system' | 'always' | 'never'
 export type BackgroundKind = 'solid' | 'linear' | 'radial' | 'conic' | 'mesh' | 'aurora' | 'image'
 export type Pattern = 'none' | 'dots' | 'grid' | 'noise' | 'diagonal' | 'stars' | 'topography'
 export type ImageFit = 'cover' | 'contain' | 'stretch' | 'tile'
 export type ComponentStyle = 'solid' | 'soft' | 'outline' | 'glass'
+
+export const BACKGROUND_KINDS: BackgroundKind[] = [
+  'solid',
+  'linear',
+  'radial',
+  'conic',
+  'mesh',
+  'aurora',
+  'image',
+]
+
+export const BACKGROUND_KIND_LABELS: Record<BackgroundKind, string> = {
+  solid: 'Однотонный',
+  linear: 'Линейный градиент',
+  radial: 'Радиальный',
+  conic: 'Конический',
+  mesh: 'Сетка из пятен',
+  aurora: 'Аврора',
+  image: 'Картинка',
+}
+
+export const PATTERNS: Pattern[] = [
+  'none',
+  'dots',
+  'grid',
+  'noise',
+  'diagonal',
+  'stars',
+  'topography',
+]
+
+export const PATTERN_LABELS: Record<Pattern, string> = {
+  none: 'Без узора',
+  dots: 'Точки',
+  grid: 'Сетка',
+  noise: 'Шум',
+  diagonal: 'Диагональ',
+  stars: 'Звёзды',
+  topography: 'Горизонтали',
+}
+
+export const IMAGE_FITS: ImageFit[] = ['cover', 'contain', 'stretch', 'tile']
+
+export const IMAGE_FIT_LABELS: Record<ImageFit, string> = {
+  cover: 'Заполнить',
+  contain: 'Вместить',
+  stretch: 'Растянуть',
+  tile: 'Замостить',
+}
+
+export const COMPONENT_STYLES: ComponentStyle[] = ['solid', 'soft', 'outline', 'glass']
+
+export const COMPONENT_STYLE_LABELS: Record<ComponentStyle, string> = {
+  solid: 'Плотный',
+  soft: 'Мягкий',
+  outline: 'Контурный',
+  glass: 'Стекло',
+}
+
+export const REDUCED_MOTION_MODES: ReducedMotionMode[] = ['system', 'always', 'never']
+
+export const ARTWORK_LABELS: Record<Artwork, string> = {
+  none: 'Нет',
+  sunburst: 'Лучи',
+  halftone: 'Растр',
+  blocks: 'Блоки',
+  circuit: 'Схема',
+  waves: 'Волны',
+  confetti: 'Конфетти',
+  bubbles: 'Пузыри',
+  contours: 'Горизонтали',
+}
+
+export const SECTION_LABELS: Record<Section, string> = {
+  appearance: 'Оформление',
+  instances: 'Сборки',
+  mods: 'Моды',
+  settings: 'Настройки',
+  about: 'О лаунчере',
+}
+
+export const SHORTCUT_LABELS: Record<Shortcut, string> = {
+  appearance: 'Оформление',
+  instances: 'Сборки',
+  mods: 'Моды',
+  settings: 'Настройки',
+  log: 'Журнал',
+  'random-theme': 'Случайная тема',
+  'toggle-background': 'Сменить фон',
+  performance: 'Производительность',
+}
+
+export const PLACEMENTS: Placement[] = ['centered', 'left', 'right', 'banner']
+
+export const PLACEMENT_LABELS: Record<Placement, string> = {
+  centered: 'По центру',
+  left: 'Слева',
+  right: 'Справа',
+  banner: 'Полоса снизу',
+}
+
+export const CORNERS_VALUES: Corners[] = ['sharp', 'rounded', 'pill', 'squircle']
+
+export const CORNERS_LABELS: Record<Corners, string> = {
+  sharp: 'Прямые',
+  rounded: 'Скруглённые',
+  pill: 'Пилюли',
+  squircle: 'Скруглённый квадрат',
+}
+
+export const MOTION_STYLES: MotionStyle[] = ['still', 'smooth', 'brisk', 'springy', 'sharp']
+
+export const MOTION_STYLE_LABELS: Record<MotionStyle, string> = {
+  still: 'Без движения',
+  smooth: 'Плавно',
+  brisk: 'Быстро',
+  springy: 'Пружинисто',
+  sharp: 'Резко',
+}
+
+export const LABEL_CASES: LabelCase[] = ['as-written', 'upper', 'title']
+
+export const LABEL_CASE_LABELS: Record<LabelCase, string> = {
+  'as-written': 'Как написано',
+  upper: 'ЗАГЛАВНЫМИ',
+  title: 'С Заглавной',
+}
 
 export interface ImageRef {
   kind: 'local'
@@ -152,14 +328,15 @@ export interface Background {
  * A closed list: a theme arranges capabilities that already exist and can never
  * introduce one. There is no field for an invented action, markup or a script.
  */
-export type Section = 'appearance' | 'instances' | 'settings' | 'about'
+export type Section = 'appearance' | 'instances' | 'mods' | 'settings' | 'about'
 
-export const SECTION_VALUES: Section[] = ['appearance', 'instances', 'settings', 'about']
+export const SECTION_VALUES: Section[] = ['appearance', 'instances', 'mods', 'settings', 'about']
 
 /** An existing capability that may be surfaced on the home screen. */
 export type Shortcut =
   | 'appearance'
   | 'instances'
+  | 'mods'
   | 'settings'
   | 'log'
   | 'random-theme'
@@ -169,6 +346,7 @@ export type Shortcut =
 export const SHORTCUT_VALUES: Shortcut[] = [
   'appearance',
   'instances',
+  'mods',
   'settings',
   'log',
   'random-theme',
@@ -254,7 +432,7 @@ export interface Settings {
   game_data_dir: string | null
   java_path: string | null
   auto_provision_java: boolean
-  selected_version: string | null
+  selected_build: string | null
   last_background: string | null
   concurrent_downloads: number
   close_on_launch: boolean
@@ -439,40 +617,260 @@ export interface AggregateProgress {
   note: string
 }
 
-export type ProviderKind = 'local' | 'openai_compatible'
+// ---------------------------------------------------------------------------
+// Builds
+// ---------------------------------------------------------------------------
 
-export interface AiConfigView {
-  provider: ProviderKind
-  baseUrl: string
-  model: string
-  hasApiKey: boolean
-  timeoutSecs: number
-  temperature: number
+/**
+ * A mod loader a build may use.
+ *
+ * `none` is vanilla. `quilt` and `opti_fine` are named so the UI can explain
+ * why they are unavailable instead of silently omitting them.
+ */
+export type ModLoader = 'none' | 'fabric' | 'forge' | 'quilt' | 'neo_forge' | 'opti_fine'
+
+export const MOD_LOADER_VALUES: ModLoader[] = [
+  'none',
+  'fabric',
+  'forge',
+  'neo_forge',
+  'quilt',
+  'opti_fine',
+]
+
+export const MOD_LOADER_LABELS: Record<ModLoader, string> = {
+  none: 'Vanilla',
+  fabric: 'Fabric',
+  forge: 'Forge',
+  neo_forge: 'NeoForge',
+  quilt: 'Quilt',
+  opti_fine: 'OptiFine',
 }
 
-export interface GenerationResult {
-  theme: ThemeSpec
-  report: ValidationReport
-  provider: ProviderKind
-  fellBack: boolean
-  note: string
-}
-
-/** A compiled-in endpoint preset. Constants on the Rust side, never user data. */
-export interface ProviderPreset {
+/** A build: an isolated game directory with its own version, loader and mods. */
+export interface BuildSummary {
   id: string
-  label: string
-  baseUrl: string
-  note: string
-  listsPricing: boolean
-  keyless: boolean
+  slug: string
+  name: string
+  versionId: string
+  launchId: string | null
+  loader: ModLoader
+  loaderVersion: string
+  state: InstanceState
+  path: string
+  sizeBytes: number
+  ramMb: number | null
+  width: number | null
+  height: number | null
+  jvmArgs: string[]
+  gameArgs: string[]
+  iconUrl: string | null
+  createdAt: string
+  updatedAt: string
+  lastPlayedAt: string | null
 }
 
-/** One model a provider reports through its own `/models` endpoint. */
-export interface ModelOption {
-  id: string
+export interface CreateBuildRequest {
+  name: string
+  versionId: string
+  loader?: ModLoader
+  loaderVersion?: string
+  ramMb?: number | null
+  width?: number | null
+  height?: number | null
+  jvmArgs?: string[]
+  gameArgs?: string[]
+}
+
+/** Partial edit of a build. Omitted fields keep their current value. */
+export interface BuildPatch {
+  name?: string
+  ramMb?: number | null
+  width?: number | null
+  height?: number | null
+  jvmArgs?: string[]
+  gameArgs?: string[]
+}
+
+export interface LoaderOption {
+  loader: ModLoader
+  /** The exact loader version string; sent back verbatim when installing. */
+  version: string
+  /** Short form for display. */
   label: string
-  /** `true` when the provider states it costs nothing, `null` when unknown. */
-  free: boolean | null
-  context: number | null
+  stable: boolean
+}
+
+export interface LoaderCatalog {
+  gameVersion: string
+  fabric: LoaderOption[]
+  forge: LoaderOption[]
+  neoforge: LoaderOption[]
+  /** Plain-language reasons a loader has nothing for this version. */
+  notes: string[]
+}
+
+export interface BuildInstallResult {
+  slug: string
+  launchId: string
+  libraries: number
+  assets: number
+  javaVersion: number
+  javaPath: string
+}
+
+export interface BuildPaths {
+  root: string
+  saves: string
+  mods: string
+  config: string
+  resourcepacks: string
+  logs: string
+}
+
+// ---------------------------------------------------------------------------
+// Mods
+// ---------------------------------------------------------------------------
+
+export interface InstalledMod {
+  projectId: string
+  slug: string
+  title: string
+  versionId: string
+  versionNumber: string
+  filename: string
+  /** `true` for a jar Sifora found in `mods/` but did not install. */
+  manual: boolean
+  sizeBytes: number
+  installedAt: string
+  iconUrl: string | null
+}
+
+export interface ModList {
+  slug: string
+  gameVersion: string
+  loader: ModLoader
+  loaderVersion: string
+  mods: InstalledMod[]
+  manualCount: number
+  canLoadMods: boolean
+}
+
+export interface ModFile {
+  url: string
+  filename: string
+  size: number
+  sha1: string | null
+  primary: boolean
+}
+
+export interface ModDependency {
+  projectId: string | null
+  versionId: string | null
+  dependencyType: string
+}
+
+export interface ModVersion {
+  id: string
+  name: string
+  versionNumber: string
+  gameVersions: string[]
+  loaders: string[]
+  versionType: string
+  downloads: number
+  published: string
+  files: ModFile[]
+  dependencies: ModDependency[]
+}
+
+export interface ModSummary {
+  projectId: string
+  slug: string
+  title: string
+  description: string
+  author: string
+  downloads: number
+  follows: number
+  categories: string[]
+  versions: string[]
+  iconUrl: string | null
+  updated: string
+  license: string
+  clientSide: string
+  serverSide: string
+}
+
+export interface ModSearchPage {
+  hits: ModSummary[]
+  offset: number
+  limit: number
+  totalHits: number
+}
+
+/** A closed set of sort orders; the Rust side rejects anything else. */
+export type ModIndex =
+  | 'relevance'
+  | 'downloads'
+  | 'follows'
+  | 'newest'
+  | 'updated'
+
+export interface ModSearchQuery {
+  /** Free-text query. Empty browses everything. */
+  query: string
+  index?: ModIndex
+  categories?: string[]
+  versions?: string[]
+  loaders?: string[]
+  /** `mod` (default), `modpack`, `resourcepack`, `shader`, `datapack`, `plugin`. */
+  projectType?: string
+  clientSide?: 'required' | 'optional' | 'unsupported' | 'unknown'
+  serverSide?: 'required' | 'optional' | 'unsupported' | 'unknown'
+  limit?: number
+  offset?: number
+}
+
+export interface ModTag {
+  name: string
+  projectType: string
+  header: string
+}
+
+export interface ModTagBundle {
+  categories: ModTag[]
+  loaders: string[]
+  gameVersions: string[]
+  projectTypes: string[]
+  indexes: string[]
+}
+
+export interface ModDetails {
+  projectId: string
+  slug: string
+  title: string
+  description: string
+  body: string
+  categories: string[]
+  gameVersions: string[]
+  loaders: string[]
+  downloads: number
+  followers: number
+  iconUrl: string | null
+  updated: string
+  published: string
+  clientSide: string
+  serverSide: string
+  projectType: string
+  licenseName: string
+  sourceUrl: string | null
+  issuesUrl: string | null
+}
+
+export interface BuildModContext {
+  slug: string
+  name: string
+  gameVersion: string
+  loader: ModLoader
+  loaderVersion: string
+  modrinthLoader: string | null
 }

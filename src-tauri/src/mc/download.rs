@@ -82,33 +82,53 @@ pub struct Ledger {
     total_bytes: u64,
     done_bytes: u64,
     sink: EventSink,
+    last_emit: std::time::Instant,
 }
+
+/// How often an aggregate update may cross the IPC boundary.
+///
+/// A 5000-file asset install calls `set_file_bytes` 5000 times; forwarding every
+/// one of those to the webview is what made the window stutter while a large
+/// download was running. The final state is always delivered by [`Ledger::flush`].
+const EMIT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(120);
 
 impl Ledger {
     pub fn new(job: impl Into<String>, total_files: u32, total_bytes: u64, sink: EventSink) -> Self {
-        let ledger =
-            Ledger { job: job.into(), total_files, done_files: 0, total_bytes, done_bytes: 0, sink };
-        ledger.emit();
+        let mut ledger =
+            Ledger { job: job.into(), total_files, done_files: 0, total_bytes, done_bytes: 0, sink, last_emit: std::time::Instant::now() };
+        ledger.emit(true);
         ledger
     }
 
     pub fn add_file(&mut self, bytes: u64) {
         self.total_files += 1;
         self.total_bytes += bytes;
-        self.emit();
+        self.emit(false);
     }
 
     pub fn set_file_bytes(&mut self, bytes: u64) {
         self.done_files = self.done_files.saturating_add(1);
         self.done_bytes = self.done_bytes.saturating_add(bytes);
-        self.emit();
+        self.emit(false);
+    }
+
+    /// Send the current totals immediately, ignoring the throttle.
+    ///
+    /// Called once a batch finishes so a throttled last update cannot leave the
+    /// progress bar stuck just short of the end.
+    pub fn flush(&mut self) {
+        self.emit(true);
     }
 
     pub fn note(&self, message: impl Into<String>) {
         (self.sink)(DownloadEvent::Note { job: self.job.clone(), message: message.into() });
     }
 
-    fn emit(&self) {
+    fn emit(&mut self, force: bool) {
+        if !force && self.last_emit.elapsed() < EMIT_INTERVAL {
+            return;
+        }
+        self.last_emit = std::time::Instant::now();
         (self.sink)(DownloadEvent::Aggregate {
             job: self.job.clone(),
             done_files: self.done_files,
@@ -170,6 +190,49 @@ fn check_cancel(cancel: &AtomicBool) -> AppResult<()> {
     }
 }
 
+/// Sidecar recording that a file at this path was hashed successfully.
+///
+/// Hashing every library on every launch is real work — the shared library
+/// folder is over a hundred megabytes — and it is repeated work: nothing about
+/// the file changes between launches. The note is only trusted while the file's
+/// size *and* modification time still match what was hashed, so an edited or
+/// replaced file is hashed again.
+fn verified_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().map(|s| s.to_os_string()).unwrap_or_default();
+    name.push(".verified");
+    path.with_file_name(name)
+}
+
+fn mtime_nanos(meta: &std::fs::Metadata) -> i64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos().min(i64::MAX as u128) as i64)
+        .unwrap_or(0)
+}
+
+fn read_verified(path: &Path) -> Option<(String, u64, i64)> {
+    let text = std::fs::read_to_string(verified_path(path)).ok()?;
+    let mut parts = text.split_whitespace();
+    let sha1 = parts.next()?.to_string();
+    if sha1.len() != 40 {
+        return None;
+    }
+    let size: u64 = parts.next()?.parse().ok()?;
+    let mtime: i64 = parts.next()?.parse().ok()?;
+    Some((sha1, size, mtime))
+}
+
+fn write_verified(path: &Path, sha1: &str) {
+    if let Ok(meta) = std::fs::metadata(path) {
+        let _ = std::fs::write(verified_path(path), format!("{sha1} {} {}\n", meta.len(), mtime_nanos(&meta)));
+    }
+}
+
+fn forget_verified(path: &Path) {
+    let _ = std::fs::remove_file(verified_path(path));
+}
+
 /// Download (or resume) a single file and verify it.
 pub async fn ensure_file(
     http: &reqwest::Client,
@@ -182,9 +245,21 @@ pub async fn ensure_file(
     // Fast path: already present and valid.
     if task.path.exists() {
         if let Some(expected) = &task.sha1 {
+            if let Ok(meta) = std::fs::metadata(&task.path) {
+                if let Some((sha1, size, mtime)) = read_verified(&task.path) {
+                    if sha1.eq_ignore_ascii_case(expected)
+                        && size == meta.len()
+                        && mtime == mtime_nanos(&meta)
+                    {
+                        emit_file(sink, &task.id, meta.len(), meta.len(), true, false);
+                        return Ok(meta.len());
+                    }
+                }
+            }
             match sha1_file(&task.path) {
                 Ok(actual) if actual.eq_ignore_ascii_case(expected) => {
                     let len = std::fs::metadata(&task.path).map(|m| m.len()).unwrap_or(0);
+                    write_verified(&task.path, &actual);
                     emit_file(sink, &task.id, len, len, true, false);
                     return Ok(len);
                 }
@@ -192,6 +267,7 @@ pub async fn ensure_file(
                     // Corrupt cache entry: drop it and download again.
                     crate::log_warn!("mc::download", "checksum mismatch, re-downloading {}", task.path.display());
                     let _ = std::fs::remove_file(&task.path);
+                    forget_verified(&task.path);
                 }
                 Err(_) => {}
             }
@@ -202,6 +278,7 @@ pub async fn ensure_file(
                 return Ok(len);
             }
             let _ = std::fs::remove_file(&task.path);
+            forget_verified(&task.path);
         }
     }
 
@@ -229,6 +306,15 @@ pub async fn ensure_file(
                     task.id,
                     err
                 );
+                // A permanent answer (404, 403) does not become a success by
+                // being asked five more times. Retrying regardless used to cost
+                // five attempts plus backoff *per file*; with a few thousand
+                // assets that is hours of waiting for a result that never
+                // changes.
+                if !err.retryable {
+                    emit_file(sink, &task.id, 0, task.size.unwrap_or(0), false, true);
+                    return Err(err);
+                }
                 last_error = Some(err);
                 tokio::time::sleep(backoff(attempt)).await;
             }
@@ -348,6 +434,11 @@ async fn download_once(
         .await
         .map_err(|e| AppError::io("Не удалось сохранить загруженный файл", &e))?;
 
+    if let Some(expected) = &task.sha1 {
+        // The file was just hashed above, so the note is a fact, not a guess.
+        write_verified(&task.path, expected);
+    }
+
     emit_file(sink, &task.id, written, written, true, false);
     Ok(written)
 }
@@ -385,6 +476,10 @@ pub async fn fetch_text(http: &reqwest::Client, url: &str) -> AppResult<String> 
                         .retryable(true),
                 );
             }
+        }
+        // Only transient failures are worth asking again.
+        if !last.as_ref().is_some_and(|e| e.retryable) {
+            break;
         }
         tokio::time::sleep(backoff(attempt)).await;
     }
@@ -494,6 +589,21 @@ mod tests {
         assert!(results[7].is_ok(), "item 8");
     }
 
+    #[test]
+    fn only_transient_failures_are_retried() {
+        // A missing file stays missing: retrying it five times per asset cost
+        // hours of pointless waiting on a broken install.
+        assert!(!is_retryable(reqwest::StatusCode::NOT_FOUND));
+        assert!(!is_retryable(reqwest::StatusCode::FORBIDDEN));
+        assert!(!is_retryable(reqwest::StatusCode::UNAUTHORIZED));
+        assert!(!is_retryable(reqwest::StatusCode::BAD_REQUEST));
+        // Genuinely transient answers are worth another attempt.
+        assert!(is_retryable(reqwest::StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(is_retryable(reqwest::StatusCode::BAD_GATEWAY));
+        assert!(is_retryable(reqwest::StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_retryable(reqwest::StatusCode::REQUEST_TIMEOUT));
+    }
+
     #[tokio::test]
     async fn bounded_runner_reports_cancellation() {
         let cancel = Arc::new(AtomicBool::new(true));
@@ -509,5 +619,62 @@ mod tests {
         std::fs::write(&file, b"").unwrap();
         assert_eq!(sha1_file(&file).unwrap(), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A file that was hashed once is noted, so the next launch can skip the
+    /// work — but only while size *and* mtime still match.
+    #[tokio::test]
+    async fn a_verified_note_is_trusted_only_for_the_same_file() {
+        let dir = std::env::temp_dir().join("sifora-verified-note-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("lib.jar");
+        std::fs::write(&file, b"payload").unwrap();
+        let sha1 = sha1_file(&file).unwrap();
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let http = reqwest::Client::new();
+        let task = FileTask::new("x", "https://example.invalid/x", &file).with_sha1(Some(sha1.clone()));
+
+        // First pass: hashes and records.
+        assert_eq!(ensure_file(&http, &task, &cancel, &sink()).await.unwrap(), 7);
+        assert!(verified_path(&file).exists(), "the note must be written");
+
+        let noted = std::fs::read_to_string(verified_path(&file)).unwrap();
+        let mut parts = noted.split_whitespace();
+        assert_eq!(parts.next().unwrap(), sha1);
+
+        // Second pass: the note still describes the file, so no request is made
+        // (the URL is unreachable — success proves the short path was taken).
+        assert_eq!(ensure_file(&http, &task, &cancel, &sink()).await.unwrap(), 7);
+
+        // Same size, different bytes: the note is stale and must not be trusted.
+        std::fs::write(&file, b"PAYLOAD").unwrap();
+        let err = ensure_file(&http, &task, &cancel, &sink()).await.unwrap_err();
+        assert_ne!(err.kind, ErrorKind::Cancelled);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_ledger_throttles_but_flush_always_reports() {
+        let seen = Arc::new(parking_lot::Mutex::new(Vec::<u32>::new()));
+        let sink_seen = seen.clone();
+        let sink: EventSink = Arc::new(move |event| {
+            if let DownloadEvent::Aggregate { done_files, .. } = event {
+                sink_seen.lock().push(done_files);
+            }
+        });
+        let mut ledger = Ledger::new("job", 0, 0, sink);
+        for _ in 0..500 {
+            ledger.add_file(1);
+            ledger.set_file_bytes(1);
+        }
+        // 1000 updates in far less than the throttle window collapse into a
+        // handful of events...
+        assert!(seen.lock().len() < 20, "throttle did not apply: {:?}", seen.lock().len());
+        // ...and the final totals still arrive exactly.
+        ledger.flush();
+        assert_eq!(*seen.lock().last().unwrap(), 500);
     }
 }

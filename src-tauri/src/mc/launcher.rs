@@ -403,14 +403,29 @@ pub async fn prepare(
 
     // ---- 3. natives ------------------------------------------------------
     let natives_dir = instance.natives.clone();
-    libraries::clear_natives(instance)?;
-    std::fs::create_dir_all(&natives_dir)
-        .map_err(|e| AppError::io("Не удалось создать папку natives", &e))?;
-    for file in library_files.iter().filter(|f| f.is_native) {
-        let path = libraries_dir.join(&file.relative);
-        if path.exists() {
-            libraries::extract_natives(&path, &natives_dir)?;
-        }
+    let native_jars: Vec<libraries::LibraryFile> =
+        library_files.iter().filter(|f| f.is_native).cloned().collect();
+    if !libraries::natives_are_ready(instance, &native_jars) {
+        let instance_for_task = instance.clone();
+        let libraries_dir = libraries_dir.clone();
+        let jars = native_jars.clone();
+        let target = natives_dir.clone();
+        tokio::task::spawn_blocking(move || -> AppResult<()> {
+            libraries::clear_natives(&instance_for_task)?;
+            std::fs::create_dir_all(&target)
+                .map_err(|e| AppError::io("Не удалось создать папку natives", &e))?;
+            let mut names: Vec<String> = Vec::new();
+            for file in &jars {
+                let path = libraries_dir.join(&file.relative);
+                if path.exists() {
+                    libraries::extract_natives_collect(&path, &target, &mut names)?;
+                }
+            }
+            libraries::mark_natives_ready(&instance_for_task, &jars, &names);
+            Ok(())
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("Не удалось распаковать natives: {e}")))??;
     }
 
     // ---- 4. assets -------------------------------------------------------
@@ -490,6 +505,41 @@ pub async fn prepare(
     })
 }
 
+/// The cache path for an asset object, when it still has to be downloaded.
+///
+/// Returns `None` for a malformed hash and for an object that is already in the
+/// shared cache with the right size. A partial or wrong-sized file forces a
+/// re-download, so an interrupted run cannot leave the game without textures.
+pub(crate) fn object_is_missing(
+    objects_dir: &Path,
+    object: &super::assets::AssetObject,
+) -> Option<PathBuf> {
+    if object.hash.len() < 2 || !object.hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let path = objects_dir.join(&object.hash[..2]).join(&object.hash);
+    let needs_download = match std::fs::metadata(&path) {
+        Ok(meta) => object.size > 0 && meta.len() != object.size,
+        Err(_) => true,
+    };
+    needs_download.then_some(path)
+}
+
+/// Where an asset object is fetched from.
+///
+/// Objects live on Mojang's resources server, addressed by their hash.
+pub(crate) fn object_url(object: &super::assets::AssetObject) -> Option<String> {
+    if object.hash.len() < 2 || !object.hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(format!(
+        "{}/{}/{}",
+        super::assets::RESOURCES_BASE,
+        &object.hash[..2],
+        object.hash
+    ))
+}
+
 async fn download_assets(
     http: &reqwest::Client,
     assets_store: &Path,
@@ -512,18 +562,13 @@ async fn download_assets(
     ledger.lock().note(format!("Ресурсов: {total}"));
 
     let objects_dir = assets_store.join("objects");
-    let base = format!("{}/", reference.url.trim_end_matches('/'));
 
     let pending: Vec<(String, String, PathBuf, String, u64)> = index
         .objects
         .iter()
         .filter_map(|(key, object)| {
-            if object.hash.len() < 2 || !object.hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return None;
-            }
-            let path = objects_dir.join(&object.hash[..2]).join(&object.hash);
-            path.exists().then_some(())?;
-            let url = format!("{base}{}/{}", &object.hash[..2], object.hash);
+            let path = object_is_missing(&objects_dir, object)?;
+            let url = object_url(object)?;
             Some((
                 format!("asset:{key}"),
                 url,
@@ -570,11 +615,13 @@ async fn download_assets(
                 crate::log_warn!("mc::launcher", "asset skipped: {}", err);
             }
         }
+        ledger.lock().flush();
     }
 
     downloader.materialise(&index, layout, &reference.id, instance_assets, ledger).await?;
     Ok(total)
 }
+
 
 /// Resolve the `inheritsFrom` chain for a version, oldest ancestor first.
 pub async fn resolve_version_chain(
@@ -971,6 +1018,7 @@ mod tests {
             meta: tmp.join("instance").join("instance.json"),
             natives: tmp.join("instance").join("natives"),
             assets: tmp.join("instance").join("assets"),
+            mods: tmp.join("instance").join("mods"),
         }, resolved, runtime)
     }
 
@@ -990,6 +1038,9 @@ mod tests {
             ram_mb: None,
             jvm_args: vec![],
             game_args: vec![],
+            icon: None,
+            last_played_at: None,
+            launch_id: None,
             width: None,
             height: None,
             mods: Default::default(),

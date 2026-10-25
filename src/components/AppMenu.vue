@@ -8,18 +8,18 @@
  * and it is the second of only two places this library is used.
  */
 import { AnimatePresence, motion } from 'motion-v'
-import { Boxes, Info, Palette, Settings, X } from '@lucide/vue'
+import { Boxes, Info, Palette, Puzzle, Settings, X } from '@lucide/vue'
 
 import { computed, type Component } from 'vue'
 
 import type { Layout, Section } from '@/types'
 
-export type ViewId = 'home' | 'themes' | 'instances' | 'settings' | 'about'
+export type ViewId = 'home' | 'themes' | 'builds' | 'mods' | 'settings' | 'about'
 
 const props = defineProps<{
   open: boolean
   view: ViewId
-  instanceCount: number
+  buildCount: number
   customThemeCount: number
   version: string
   /** Arrangement from the active theme. Optional so the menu still renders. */
@@ -33,6 +33,8 @@ const emit = defineEmits<{
 
 const ITEMS: Array<{ id: ViewId; label: string; icon: Component; section: Section }> = [
   { id: 'home', label: 'Запуск', icon: Boxes, section: 'about' },
+  { id: 'builds', label: 'Сборки', icon: Boxes, section: 'instances' },
+  { id: 'mods', label: 'Моды', icon: Puzzle, section: 'mods' },
   { id: 'themes', label: 'Оформление', icon: Palette, section: 'appearance' },
   { id: 'settings', label: 'Настройки', icon: Settings, section: 'settings' },
   { id: 'about', label: 'О лаунчере', icon: Info, section: 'about' },
@@ -117,9 +119,8 @@ function go(view: ViewId): void {
       </nav>
 
       <footer class="sf-drawer__foot sf-muted">
-        <p>Загрузчики модов и менеджер сборок — следующий этап.</p>
-        <p v-if="instanceCount || customThemeCount" class="sf-drawer__stats">
-          {{ instanceCount }} сборок · {{ customThemeCount }} своих тем
+        <p v-if="buildCount || customThemeCount" class="sf-drawer__stats">
+          {{ buildCount }} сборок · {{ customThemeCount }} своих тем
         </p>
       </footer>
     </motion.aside>

@@ -1,7 +1,7 @@
 ﻿//! Theme validation.
 //!
 //! This is the single choke point every theme — built-in, user-authored or
-//! AI-generated — has to pass. It performs three jobs:
+//! imported from a file — has to pass. It performs three jobs:
 //!
 //! 1. **Clamping** — `Tokens::clamp_in_place` pulls every number into a safe
 //!    range and rejects NaN/infinity.

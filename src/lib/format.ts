@@ -62,3 +62,22 @@ export function fraction(done: number, total: number): number {
   if (!Number.isFinite(total) || total <= 0) return 0
   return Math.min(1, Math.max(0, done / total))
 }
+
+const COUNT_UNITS: Array<[number, string]> = [
+  [1_000_000_000, 'млрд'],
+  [1_000_000, 'млн'],
+  [1_000, 'тыс.'],
+]
+
+/** Compact download/follower counts, e.g. `412 тыс.`. */
+export function formatCount(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0'
+  for (const [scale, suffix] of COUNT_UNITS) {
+    if (value >= scale) {
+      const scaled = value / scale
+      // The comma is the decimal separator this UI already uses.
+      return `${scaled >= 100 ? Math.round(scaled) : scaled.toFixed(1).replace('.', ',')} ${suffix}`
+    }
+  }
+  return String(Math.round(value))
+}

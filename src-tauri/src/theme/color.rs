@@ -1,6 +1,6 @@
 ﻿//! A strict, injection-proof colour primitive.
 //!
-//! Themes (including AI-generated ones) may only ever express colours through
+//! Themes may only ever express colours through
 //! [`Color`]. The type has no `FromStr` that accepts arbitrary text: it accepts
 //! a hexadecimal literal or a numeric RGB(A) tuple and nothing else, and it
 //! *re-serialises* into a canonical form. That makes it impossible for a theme

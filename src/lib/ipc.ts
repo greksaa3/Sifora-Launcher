@@ -10,19 +10,26 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { convertFileSrc } from '@tauri-apps/api/core'
 
 import type {
-  AiConfigView,
   BackgroundImage,
   Bootstrap,
+  BuildInstallResult,
+  BuildModContext,
+  BuildPatch,
+  BuildPaths,
+  BuildSummary,
+  CreateBuildRequest,
   GameSession,
   GameState,
-  GenerationResult,
-  InstanceSummary,
-  InstallResponse,
+  InstalledMod,
   JavaRuntime,
+  LoaderCatalog,
   LogRecord,
-  ModelOption,
-  ProviderKind,
-  ProviderPreset,
+  ModDetails,
+  ModList,
+  ModSearchPage,
+  ModSearchQuery,
+  ModTagBundle,
+  ModVersion,
   Settings,
   ThemeList,
   ThemeSpec,
@@ -102,35 +109,40 @@ export const versions = {
 /* ------------------------------------------------------- install / launch */
 
 export const game = {
-  install: (request: {
-    versionId: string
-    ramMb?: number
-    width?: number
-    height?: number
-    name?: string
-  }) => call<InstallResponse>('install_version', { request }),
-  launch: (request: {
-    versionId: string
-    instanceSlug?: string
-    ramMb?: number
-    width?: number
-    height?: number
-  }) => call<GameSession>('launch_game', { request }),
   status: () => call<GameState>('game_status'),
   session: () => call<GameSession | null>('game_session'),
-  listInstances: () => call<InstanceSummary[]>('list_instances'),
-  updateInstance: (
-    slug: string,
-    patch: { ramMb?: number; width?: number; height?: number; name?: string },
-  ) =>
-    call<InstanceSummary>('update_instance_settings', {
-      slug,
-      ramMb: patch.ramMb ?? null,
-      width: patch.width ?? null,
-      height: patch.height ?? null,
-      name: patch.name ?? null,
-    }),
-  deleteInstance: (slug: string) => call<void>('delete_instance', { slug }),
+  stop: () => call<void>('stop_game'),
+}
+
+/* ---------------------------------------------------------------- builds */
+
+export const builds = {
+  list: () => call<BuildSummary[]>('list_builds'),
+  create: (request: CreateBuildRequest) => call<BuildSummary>('create_build', { request }),
+  update: (slug: string, patch: BuildPatch) => call<BuildSummary>('update_build', { slug, patch }),
+  remove: (slug: string) => call<void>('delete_build', { slug }),
+  pickIcon: (slug: string) => call<BuildSummary | null>('pick_build_icon', { slug }),
+  clearIcon: (slug: string) => call<BuildSummary>('clear_build_icon', { slug }),
+  paths: (slug: string) => call<BuildPaths>('build_paths', { slug }),
+  loaders: (gameVersion: string) => call<LoaderCatalog>('loader_catalog', { gameVersion }),
+  install: (slug: string) => call<BuildInstallResult>('install_build', { slug }),
+  launch: (slug: string) => call<GameSession>('launch_build', { slug }),
+}
+
+/* ------------------------------------------------------------------ mods */
+
+export const mods = {
+  list: (slug: string) => call<ModList>('list_mods', { slug }),
+  install: (request: { slug: string; projectId: string; versionId?: string | null }) =>
+    call<InstalledMod>('install_mod', { request }),
+  remove: (slug: string, filename: string) =>
+    call<ModList>('remove_mod', { slug, filename }),
+  context: (slug: string) => call<BuildModContext>('build_mod_context', { slug }),
+  tags: () => call<ModTagBundle>('modrinth_tags'),
+  search: (query: ModSearchQuery) => call<ModSearchPage>('modrinth_search', { query }),
+  project: (projectId: string) => call<ModDetails>('modrinth_project', { projectId }),
+  versions: (query: { projectId: string; gameVersion?: string; loader?: string }) =>
+    call<ModVersion[]>('modrinth_versions', { query }),
 }
 
 /* ---------------------------------------------------------------- themes */
@@ -145,33 +157,16 @@ export const themes = {
   currentPreview: () => call<ThemeSpec | null>('current_preview'),
   apply: (theme: ThemeSpec) => call<ThemeSummary>('apply_theme', { theme }),
   applyById: (themeId: string) => call<ThemeSpec>('apply_theme_by_id', { themeId }),
+  /** Fork any theme (including a built-in) into a new custom one. */
+  derive: (theme: ThemeSpec, name: string) =>
+    call<ThemeSummary>('derive_theme', { theme, name }),
   undo: () => call<ThemeSpec>('undo_theme'),
   reset: () => call<ThemeSpec>('reset_theme'),
   remove: (themeId: string) => call<void>('delete_theme', { themeId }),
-  generate: (description: string) => call<GenerationResult>('generate_theme', { description }),
-  aiConfig: () => call<AiConfigView>('get_ai_config'),
-  setAiConfig: (config: {
-    provider: ProviderKind
-    baseUrl: string
-    model: string
-    apiKey?: string
-    timeoutSecs?: number
-    temperature?: number
-  }) =>
-    call<AiConfigView>('set_ai_config', {
-      config: {
-        provider: config.provider,
-        baseUrl: config.baseUrl ?? '',
-        model: config.model ?? '',
-        apiKey: config.apiKey ?? '',
-        timeoutSecs: config.timeoutSecs ?? 60,
-        temperature: config.temperature ?? 0.7,
-      },
-    }),
+  exportTheme: (themeId: string) =>
+    call<string | null>('export_theme', { themeId }),
+  importTheme: () => call<ThemeSummary | null>('import_theme'),
   validate: (theme: ThemeSpec) => call<ValidationReport>('validate_theme_command', { theme }),
-  presets: () => call<ProviderPreset[]>('list_provider_presets'),
-  models: (baseUrl: string) => call<ModelOption[]>('list_ai_models', { baseUrl }),
-  testConnection: () => call<string>('test_ai_connection'),
   contrast: (foreground: string, background: string) =>
     call<number | null>('theme_contrast', { foreground, background }),
   defaultSpec: () => call<ThemeSpec>('default_theme_spec'),

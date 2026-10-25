@@ -6,10 +6,10 @@
  * Rust before persisting it — the UI clamps as well, but the backend is the
  * authority so a hand-edited file cannot put the launcher into a bad state.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Cpu, FolderOpen, HardDrive, Info, RefreshCw, RotateCcw, User } from '@lucide/vue'
 
-import { app, versions as versionApi } from '@/lib/ipc'
+import { app } from '@/lib/ipc'
 import { formatBytes } from '@/lib/format'
 import { pushToast, reportError } from '@/stores/app'
 import type { JavaRuntime, Settings } from '@/types'
@@ -22,7 +22,6 @@ const emit = defineEmits<{
 }>()
 
 const runtimes = ref<JavaRuntime[]>([])
-const details = ref('')
 const saving = ref(false)
 const scanning = ref(false)
 
@@ -53,18 +52,6 @@ async function loadRuntimes(): Promise<void> {
 }
 
 onMounted(loadRuntimes)
-
-watch(
-  () => props.settings.selected_version,
-  (selected) => {
-    details.value = ''
-    void versionApi
-      .details(selected ?? '')
-      .then((info) => `Java ${info.javaMajor} · ${info.libraryCount} библиотек · ${info.assetIndex}`)
-      .catch(() => '')
-  },
-  { immediate: true },
-)
 
 async function patch(changes: Partial<Settings>): Promise<void> {
   saving.value = true
@@ -219,12 +206,6 @@ function resetAll(): void {
           <button class="sf-btn sf-btn--primary" type="button" @click="commitRename">ОК</button>
           <button class="sf-btn sf-btn--soft" type="button" @click="cancelRename">Отмена</button>
           <span v-if="nameTouched && nameProblem" class="sf-field__error">{{ nameProblem }}</span>
-        </span>
-      </div>
-      <div v-if="details" class="sf-row">
-        <span class="sf-row__label">
-          <span class="sf-row__title">Выбранная версия</span>
-          <span class="sf-row__hint">{{ details }}</span>
         </span>
       </div>
     </section>

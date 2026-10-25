@@ -13,17 +13,18 @@ import { ChevronLeft, Palette, User } from '@lucide/vue'
 import AppMenu, { type ViewId } from '@/components/AppMenu.vue'
 import BackdropLayer from '@/components/BackdropLayer.vue'
 import BackgroundPicker from '@/components/BackgroundPicker.vue'
+import BuildPicker from '@/components/BuildPicker.vue'
 import PlayButton from '@/components/PlayButton.vue'
 import ProgressPanel from '@/components/ProgressPanel.vue'
 import ShortcutBar from '@/components/ShortcutBar.vue'
 import ToastHost from '@/components/ToastHost.vue'
-import VersionSelector from '@/components/VersionSelector.vue'
 import AboutView from '@/views/AboutView.vue'
 import AppearanceView from '@/views/AppearanceView.vue'
-import InstancesView from '@/views/InstancesView.vue'
+import BuildsView from '@/views/BuildsView.vue'
+import ModsView from '@/views/ModsView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 
-import { app, game, themes as themeApi, themes } from '@/lib/ipc'
+import { app, builds as buildsApi, themes as themeApi, themes } from '@/lib/ipc'
 import {
   activeTheme,
   bootstrap,
@@ -38,26 +39,15 @@ import {
   reportError,
   resetProgress,
   session,
+  setSession,
   settings,
   themeCatalog,
   toasts,
   watchSystemMotionPreference,
 } from '@/stores/app'
-import {
-  error,
-  loadVersions,
-  query,
-  rows,
-  sections,
-  selectVersion,
-  selected,
-  selectedId,
-  setTypeFilter,
-  typeFilter,
-  loading,
-} from '@/stores/versions'
+import { refreshBuilds, selectedSlug, selectBuild, useBuilds } from '@/stores/builds'
 import { applyTheme } from '@/theme/apply'
-import type { BackgroundImage, ReleaseType, Shortcut, ThemeSummary, VersionRow } from '@/types'
+import type { BackgroundImage, Shortcut, ThemeSummary } from '@/types'
 
 /* ------------------------------------------------------------------ state */
 
@@ -65,18 +55,24 @@ const view = ref<ViewId>('home')
 const menuOpen = ref(false)
 const pickerOpen = ref(false)
 const launchError = ref<string | null>(null)
-const instances = ref<number>(0)
 const backgroundImage = ref<BackgroundImage | null>(null)
 const activeImageId = ref<string | null>(null)
+/** Build the mods screen is browsing; follows the selection unless opened elsewhere. */
+const modsSlug = ref<string | null>(null)
 
 /* --------------------------------------------------------------- computed */
 
+const builds = useBuilds()
 const playerName = computed(() => settings.value?.player_name ?? 'Player')
 const isRunning = computed(() => session.value?.state === 'running')
 const isBusy = computed(() => busyLabel.value !== null)
-const canPlay = computed(() => Boolean(selectedId.value) && !isBusy.value && !isRunning.value)
+const canPlay = computed(
+  () => Boolean(selectedSlug.value) && !isBusy.value && !isRunning.value,
+)
 const builtinThemes = computed(() => themeCatalog.value.filter((t: ThemeSummary) => t.builtin))
 const customThemeCount = computed(() => themeCatalog.value.filter((t: ThemeSummary) => !t.builtin).length)
+/** The build the mods screen acts on: an explicit choice, else the selection. */
+const modsTarget = computed(() => modsSlug.value ?? selectedSlug.value ?? '')
 
 /* ------------------------------------------------------------- lifecycle */
 
@@ -110,86 +106,59 @@ onMounted(async () => {
   await initialise()
   if (!ready.value) return
 
-  await loadVersions()
-  const saved = settings.value?.selected_version ?? null
-  const fallback =
-    rows.value.find((r) => r.is_latest_release)?.id ??
-    rows.value.find((r) => r.installed)?.id ??
-    null
-  const chosen = saved && rows.value.some((r) => r.id === saved) ? saved : fallback
-  selectVersion(chosen)
-  if (chosen !== settings.value?.selected_version) void persistSelection(chosen)
+  // Read after `initialise`: the selection is restored from settings.
+  await refreshBuilds().catch((error) => reportError(error))
 
   const images = customImages.value
   if (images.length) {
     backgroundImage.value = images[0]
     activeImageId.value = images[0].id
   }
-  instances.value = (await game.listInstances().catch(() => [])).length
 })
 
 onBeforeUnmount(disposeApp)
 
 /* ---------------------------------------------------------------- actions */
 
-async function persistSelection(versionId: string | null): Promise<void> {
-  if (!settings.value) return
-  try {
-    settings.value = await app.setSettings({ ...settings.value, selected_version: versionId })
-  } catch (e) {
-    reportError(e)
-  }
-}
-
-function onSelect(row: VersionRow): void {
-  selectVersion(row.id)
-  void persistSelection(row.id)
-  if (!row.supported) pushToast('warning', `${row.id}: ${row.unsupported_reason}`)
-}
-
+/**
+ * Play the selected build.
+ *
+ * Installing is not a separate step the player has to know about: launching a
+ * build that still needs files prepares them first, and a build that is ready
+ * goes straight to the game. The Rust side owns that decision.
+ */
 async function onPlay(): Promise<void> {
-  const versionId = selectedId.value
-  if (!versionId) {
-    pushToast('warning', 'Сначала выберите версию Minecraft')
+  const slug = selectedSlug.value
+  if (!slug) {
+    pushToast('warning', 'Сначала создайте сборку')
+    view.value = 'builds'
     return
   }
 
   launchError.value = null
   resetProgress()
-  busyLabel.value = 'Проверяем файлы версии…'
+  busyLabel.value = 'Проверяем файлы сборки…'
 
   try {
-    const list = await game.listInstances().catch(() => [])
-    const instance = list.find((i) => i.versionId === versionId)
-    instances.value = list.length
-
-    if (!instance || instance.state !== 'ready') {
-      busyLabel.value = `Загружаем Minecraft ${versionId}…`
-      const installed = await game.install({ versionId })
-      pushToast(
-        'success',
-        `Minecraft ${versionId} готов`,
-        `${installed.libraries} библиотек · ${installed.assets} ресурсов · Java ${installed.javaVersion}`,
-      )
-      instances.value = (await game.listInstances().catch(() => list)).length
-    }
-
-    busyLabel.value = 'Запускаем…'
-    const started = await game.launch({
-      versionId,
-      instanceSlug: instance?.slug,
-      ramMb: settings.value?.ram_mb,
-    })
-    session.value = started
+    const started = await buildsApi.launch(slug)
+    setSession(started)
     pushToast('success', 'Minecraft запущен', started.versionId)
-  } catch (e) {
-    const err = e as { message?: string; detail?: string }
-    reportError(e)
+  } catch (error) {
+    const err = error as { message?: string; detail?: string }
+    reportError(error)
     launchError.value = err?.message ?? 'Не удалось запустить игру'
-    pushToast('error', 'Запуск не удался', err?.detail)
   } finally {
     busyLabel.value = null
+    // A launch may have resolved a loader or finished an install.
+    await refreshBuilds().catch(() => undefined)
   }
+}
+
+/** Open the mod browser for a specific build. */
+function openMods(slug: string): void {
+  modsSlug.value = slug
+  void selectBuild(slug)
+  view.value = 'mods'
 }
 
 async function onPreset(id: string): Promise<void> {
@@ -220,8 +189,9 @@ function onThemeApplied(theme: Parameters<typeof applyTheme>[0]): void {
   applyTheme(theme)
 }
 
-function onFilter(value: ReleaseType | 'all'): void {
-  setTypeFilter(value)
+/** The appearance view owns its own edits; it hands back the fresh list. */
+function onCatalogChanged(themes: ThemeSummary[]): void {
+  themeCatalog.value = themes
 }
 
 function dismissProgress(): void {
@@ -251,7 +221,10 @@ async function runShortcut(shortcut: Shortcut): Promise<void> {
       view.value = 'settings'
       break
     case 'instances':
-      view.value = 'instances'
+      view.value = 'builds'
+      break
+    case 'mods':
+      view.value = 'mods'
       break
     case 'log':
       view.value = 'about'
@@ -365,11 +338,17 @@ async function runShortcut(shortcut: Shortcut): Promise<void> {
           :preset-id="settings?.theme_id ?? null"
           :image-id="activeImageId"
           @applied="onThemeApplied"
+          @catalog-changed="onCatalogChanged"
           @preset-changed="onPreset"
           @image-changed="onImage"
           @images-changed="customImages = $event"
         />
-        <InstancesView v-else-if="view === 'instances'" />
+        <BuildsView
+          v-else-if="view === 'builds'"
+          @open-mods="openMods"
+          @played="view = 'home'"
+        />
+        <ModsView v-else-if="view === 'mods' && modsTarget" :key="modsTarget" :slug="modsTarget" />
         <AboutView
           v-else
           :version="bootstrap?.version ?? ''"
@@ -388,19 +367,7 @@ async function runShortcut(shortcut: Shortcut): Promise<void> {
           :running="isRunning"
           @activate="onPlay"
         />
-        <VersionSelector
-          :rows="rows"
-          :sections="sections"
-          :selected="selected"
-          :query="query"
-          :type-filter="typeFilter"
-          :loading="loading"
-          :error="error"
-          @update:query="query = $event"
-          @update:type-filter="onFilter"
-          @select="onSelect"
-          @retry="loadVersions(true)"
-        />
+        <BuildPicker @create="view = 'builds'" @manage="view = 'builds'" />
 
         <ShortcutBar :shortcuts="shortcuts" @run="runShortcut" />
       </div>
@@ -418,7 +385,7 @@ async function runShortcut(shortcut: Shortcut): Promise<void> {
     <AppMenu
       :open="menuOpen"
       :view="view"
-      :instance-count="instances"
+      :build-count="builds.count.value"
       :custom-theme-count="customThemeCount"
       :layout="activeTheme?.tokens.layout ?? null"
       :version="bootstrap?.version ?? '0.1.0'"

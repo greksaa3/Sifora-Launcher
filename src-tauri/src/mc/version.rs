@@ -135,9 +135,18 @@ pub enum RuleAction {
     Disallow,
 }
 
+/// The `os` part of a Mojang rule.
+///
+/// Every field is optional in the real data. Mojang ships rules that constrain
+/// only the architecture (`{"arch": "x86"}`) and rules that constrain only the
+/// platform (`{"name": "windows"}`), so requiring `name` made the whole version
+/// document fail to parse. `versionRange` (Mojang's newer structured build
+/// range) is read but not evaluated, and only ever appears inside the
+/// `arguments.default-user-jvm` block, which Sifora does not consume.
 #[derive(Debug, Clone, Deserialize)]
 pub struct OsRule {
-    pub name: String,
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     pub version: Option<String>,
     #[serde(default)]
@@ -169,24 +178,32 @@ impl Platform {
             Platform::Linux => "linux",
         }
     }
+}
 
-    fn arch_name(self) -> &'static str {
-        match self {
-            Platform::Windows => "x86",
-            Platform::MacOs => "x86_64",
-            Platform::Linux => "x86_64",
-        }
+/// The host CPU architecture as Mojang spells it in `os.arch`.
+///
+/// This used to answer `"x86"` for every Windows host, which made the
+/// 32-bit-only rule `{"arch": "x86"}` match on 64-bit machines and inject the
+/// wrong JVM arguments.
+fn current_arch() -> &'static str {
+    if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else if cfg!(target_arch = "x86") {
+        "x86"
+    } else {
+        "x86_64"
     }
 }
 
 impl OsRule {
     pub fn matches(&self, platform: Platform) -> bool {
-        if !self.name.eq_ignore_ascii_case(platform.os_name()) {
-            return false;
+        if let Some(name) = &self.name {
+            if !name.eq_ignore_ascii_case(platform.os_name()) {
+                return false;
+            }
         }
         if let Some(arch) = &self.arch {
-            let current = if cfg!(target_arch = "aarch64") { "aarch64" } else { platform.arch_name() };
-            if !arch.eq_ignore_ascii_case(current) {
+            if !arch.is_empty() && !arch.eq_ignore_ascii_case(current_arch()) {
                 return false;
             }
         }
@@ -342,8 +359,15 @@ pub struct JavaVersion {
 
 impl VersionMeta {
     pub fn parse(raw: &str) -> AppResult<Self> {
-        serde_json::from_str(raw)
-            .map_err(|e| AppError::config("Метаданные версии повреждены").with_detail(e.to_string()))
+        serde_json::from_str(raw).map_err(|e| {
+            // `detail` is never shown to the user, so mirror it into the log
+            // bus. Without this a malformed document is undiagnosable.
+            crate::logbus::error(
+                "version",
+                format!("не удалось разобрать метаданные версии: {e}"),
+            );
+            AppError::config("Метаданные версии повреждены").with_detail(e.to_string())
+        })
     }
 
     /// Java feature version this build expects, defaulting to 8 for the many
@@ -459,15 +483,24 @@ impl ResolvedVersion {
     }
 }
 
-/// Two libraries are "the same artifact" when they share `group:artifact`.
+/// Two libraries are "the same artifact" when they share `group:artifact` *and
+/// the classifier*.
+///
 /// A child document (Forge, Fabric, …) that bumps the version must replace the
-/// parent's entry rather than adding a second copy to the classpath.
+/// parent's entry rather than adding a second copy to the classpath. The
+/// classifier has to be part of the key: `org.lwjgl:lwjgl:3.3.1` and
+/// `org.lwjgl:lwjgl:3.3.1:natives-windows` are different files, and collapsing
+/// them silently dropped every LWJGL core jar while keeping one native.
 fn same_artifact(a: &Library, b: &Library) -> bool {
-    fn key(lib: &Library) -> Option<&str> {
-        let mut parts = lib.name.split(':');
+    fn key(lib: &Library) -> Option<(&str, &str, Option<&str>)> {
+        let name = lib.name.split('@').next().unwrap_or(&lib.name);
+        let mut parts = name.split(':');
         let group = parts.next()?;
         let artifact = parts.next()?;
-        Some(&lib.name[..group.len() + 1 + artifact.len()])
+        // The version is deliberately skipped; the classifier is not.
+        parts.next()?;
+        let classifier = parts.next();
+        Some((group, artifact, classifier))
     }
     key(a).is_some() && key(a) == key(b)
 }
@@ -582,12 +615,48 @@ mod tests {
 
     #[test]
     fn os_rules_only_match_their_platform() {
-        let osx = OsRule { name: "osx".into(), version: None, arch: None };
-        let windows = OsRule { name: "windows".into(), version: Some("*".into()), arch: None };
+        let osx = OsRule { name: Some("osx".into()), version: None, arch: None };
+        let windows =
+            OsRule { name: Some("windows".into()), version: Some("*".into()), arch: None };
         assert!(osx.matches(Platform::MacOs));
         assert!(!osx.matches(Platform::Windows));
         assert!(windows.matches(Platform::Windows));
         assert!(!windows.matches(Platform::Linux));
+    }
+
+    /// Regression: Mojang ships rules whose `os` object carries only `arch`.
+    /// A required `name` made `VersionMeta::parse` reject the entire version
+    /// document, so the launcher answered "Метаданные версии повреждены" and
+    /// no version could ever be installed or started.
+    #[test]
+    fn an_os_rule_without_a_name_still_parses() {
+        let meta = meta(
+            r#"{"id":"26.3","mainClass":"net.minecraft.client.main.Main",
+                "arguments":{"jvm":[
+                    {"rules":[{"action":"allow","os":{"arch":"x86"}}],"value":"-Xss1M"},
+                    {"rules":[{"action":"allow","os":{"name":"windows"}}],"value":"-Dwin=true"}
+                ]}}"#,
+        );
+        let jvm = meta.arguments.unwrap().jvm;
+        assert_eq!(jvm.len(), 2);
+
+        // An arch-only rule must not constrain the platform: it depends on the
+        // host architecture alone, and never rejects a platform by name.
+        let arch_only = match &jvm[0] {
+            Argument::Conditional { rules, .. } => rules[0].clone(),
+            _ => panic!("expected conditional"),
+        };
+        let x86_host = cfg!(target_arch = "x86");
+        assert_eq!(arch_only.matches(Platform::Windows, &[]), x86_host);
+        assert_eq!(arch_only.matches(Platform::Linux, &[]), x86_host);
+
+        // A name-only rule must still filter platforms.
+        let windows_only = match &jvm[1] {
+            Argument::Conditional { rules, .. } => rules[0].clone(),
+            _ => panic!("expected conditional"),
+        };
+        assert!(windows_only.matches(Platform::Windows, &[]));
+        assert!(!windows_only.matches(Platform::MacOs, &[]));
     }
 
     #[test]
@@ -606,6 +675,47 @@ mod tests {
         assert_eq!(resolved.libraries.len(), 2);
         assert!(resolved.libraries.iter().any(|l| l.name == "a:b:2"));
         assert!(!resolved.libraries.iter().any(|l| l.name == "a:b:1"));
+    }
+
+    /// A native is a *different artifact*, not a newer version of the core jar.
+    ///
+    /// Keying the merge on `group:artifact` alone collapsed
+    /// `org.lwjgl:lwjgl:3.3.1` and its six `natives-*` siblings into the last
+    /// one seen, which silently removed every LWJGL core jar from the classpath
+    /// and left the game unable to load `MemoryUtil`.
+    #[test]
+    fn a_native_does_not_replace_the_core_jar() {
+        let m = meta(
+            r#"{"id":"1.20.1","mainClass":"Main","libraries":[
+                 {"name":"org.lwjgl:lwjgl:3.3.1"},
+                 {"name":"org.lwjgl:lwjgl:3.3.1:natives-windows"},
+                 {"name":"org.lwjgl:lwjgl:3.3.1:natives-windows-arm64"},
+                 {"name":"org.lwjgl:lwjgl:3.3.1:natives-windows-x86"}]}"#,
+        );
+        let resolved = ResolvedVersion::resolve("1.20.1", &[m]).unwrap();
+        assert_eq!(resolved.libraries.len(), 4, "all four entries must survive");
+        assert!(resolved.libraries.iter().any(|l| l.name == "org.lwjgl:lwjgl:3.3.1"));
+        assert!(resolved
+            .libraries
+            .iter()
+            .any(|l| l.name == "org.lwjgl:lwjgl:3.3.1:natives-windows"));
+    }
+
+    /// The child still wins when it bumps the *same* classifier.
+    #[test]
+    fn a_child_replaces_the_same_coordinate_only() {
+        let parent = meta(
+            r#"{"id":"p","mainClass":"P","libraries":[
+                 {"name":"g:a:1"},{"name":"g:a:1:natives-windows"}]}"#,
+        );
+        let child = meta(
+            r#"{"id":"c","inheritsFrom":"p","mainClass":"C",
+               "libraries":[{"name":"g:a:2"}]}"#,
+        );
+        let resolved = ResolvedVersion::resolve("c", &[parent, child]).unwrap();
+        assert!(resolved.libraries.iter().any(|l| l.name == "g:a:2"));
+        assert!(resolved.libraries.iter().any(|l| l.name == "g:a:1:natives-windows"));
+        assert!(!resolved.libraries.iter().any(|l| l.name == "g:a:1"));
     }
 
     #[test]

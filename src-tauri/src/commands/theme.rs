@@ -7,21 +7,20 @@
 //! * apply a theme (persisted, with the previous one remembered for undo),
 //! * undo the last apply,
 //! * reset to the built-in default,
-//! * create a theme from a natural-language description (local or remote model),
-//! * create or delete a theme derived from an existing one.
+//! * create a custom theme derived from an existing one, and edit it freely,
+//! * export a theme to a file and import one back.
 //!
 //! Every write goes through `ThemeStore`, which re-validates the spec. A
 //! theme that fails validation is refused — it is never "partially applied".
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::error::{AppError, AppResult};
 use crate::settings::Settings;
 use crate::state::AppState;
-use crate::theme::{
-    provider, validate::validate_theme, Color, ThemeSpec, ThemeSummary, ValidationReport,
-};
+use crate::theme::{validate::validate_theme, Color, ThemeSpec, ThemeSummary, ValidationReport};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -188,78 +187,79 @@ pub fn reset_theme(app: AppHandle, state: State<'_, AppState>) -> AppResult<Them
 }
 
 #[tauri::command]
-pub fn delete_theme(state: State<'_, AppState>, theme_id: String) -> AppResult<()> {
+pub fn delete_theme(app: AppHandle, state: State<'_, AppState>, theme_id: String) -> AppResult<()> {
     let settings = state.settings();
     state.themes().delete(&theme_id)?;
     if settings.theme_id == theme_id {
         let mut next = settings;
         next.theme_id = crate::theme::defaults::DEFAULT_THEME_ID.into();
         state.update_settings(next)?;
+        // Deleting the active theme silently changed what is on screen, so the
+        // renderer has to be told rather than left wearing a theme that is gone.
+        broadcast_theme_changed(&app, &state);
     }
     Ok(())
 }
 
-#[tauri::command]
-pub async fn generate_theme(
-    state: State<'_, AppState>,
-    description: String,
-) -> AppResult<provider::GenerationResult> {
-    let config = state.ai_config();
-    provider::generate_theme(&description, &config, &state.json_http).await
-}
-
-#[tauri::command]
-pub fn get_ai_config(state: State<'_, AppState>) -> provider::AiConfigView {
-    state.ai_config().view()
-}
-
-/// The endpoints offered as one-click presets.
+/// Export a theme to a file the user picks.
 ///
-/// Compiled-in constants, not user data: nothing the renderer sends can change
-/// what this returns.
+/// Built-in themes are exportable too: sharing a preset is exactly what export
+/// is for, and the file carries a `builtin` flag that import deliberately
+/// ignores.
 #[tauri::command]
-pub fn list_provider_presets() -> Vec<crate::theme::ProviderPreset> {
-    crate::theme::catalog::PRESETS.to_vec()
-}
-
-/// Ask a provider what models it offers.
-///
-/// The stored key is attached only when the address asked about is the address
-/// the key belongs to. The renderer never holds the key, so it cannot be made
-/// to send it somewhere new — typing a different address in the UI means the
-/// request goes out without one.
-#[tauri::command]
-pub async fn list_ai_models(
+pub fn export_theme(
+    app: AppHandle,
     state: State<'_, AppState>,
-    base_url: String,
-) -> AppResult<Vec<crate::theme::ModelOption>> {
-    let stored = state.ai_config();
-    let normalised = base_url.trim().trim_end_matches('/');
-    let key = if stored.base_url.trim_end_matches('/') == normalised {
-        Some(stored.api_key.clone())
-    } else {
-        None
-    };
-    crate::theme::catalog::list_models(normalised, key.as_deref(), &state.json_http).await
+    theme_id: String,
+) -> AppResult<Option<String>> {
+    let theme = state
+        .themes()
+        .get(&theme_id)
+        .ok_or_else(|| AppError::not_found("Тема не найдена"))?;
+
+    let suggested = format!("{}.sifora-theme.json", crate::theme::store::file_stem(&theme));
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Куда сохранить тему")
+        .set_file_name(suggested)
+        .add_filter("Тема Sifora", &["json"])
+        .blocking_save_file();
+    let Some(picked) = picked else { return Ok(None) };
+    let target = picked.into_path().map_err(|e| {
+        AppError::invalid("Не удалось получить путь для сохранения").with_detail(e.to_string())
+    })?;
+
+    let bytes = crate::theme::store::to_file_bytes(&theme)?;
+    std::fs::write(&target, bytes)
+        .map_err(|e| AppError::io("Не удалось записать файл темы", &e))?;
+    Ok(Some(target.display().to_string()))
 }
 
-/// Check that the saved model actually answers, without generating anything.
+/// Import a theme from a file and register it as a new custom theme.
+///
+/// The file's id is discarded by the store, so an import can never overwrite an
+/// existing theme or impersonate a built-in one.
 #[tauri::command]
-pub async fn test_ai_connection(state: State<'_, AppState>) -> AppResult<String> {
-    let config = state.ai_config();
-    provider::test_connection(&config, &state.json_http).await
-}
+pub fn import_theme(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<Option<ThemeSummary>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Выберите файл темы")
+        .add_filter("Тема Sifora", &["json"])
+        .blocking_pick_file();
+    let Some(picked) = picked else { return Ok(None) };
+    let source = picked.into_path().map_err(|e| {
+        AppError::invalid("Не удалось получить путь к файлу темы").with_detail(e.to_string())
+    })?;
 
-#[tauri::command]
-pub fn set_ai_config(state: State<'_, AppState>, config: provider::AiConfig) -> AppResult<provider::AiConfigView> {
-    // Preserve the stored key when the caller sends a blank one (the UI never
-    // receives the real key, so it always sends blank on update).
-    let mut next = config;
-    if next.api_key.trim().is_empty() {
-        next.api_key = state.ai_config().api_key;
-    }
-    let saved = state.set_ai_config(next)?;
-    Ok(saved.view())
+    let raw = std::fs::read(&source).map_err(|e| AppError::io("Не удалось прочитать файл", &e))?;
+    let spec = crate::theme::store::from_file_bytes(&raw)?;
+    let stored = state.themes().import(spec)?;
+    Ok(Some(crate::theme::defaults::summarize(&stored)))
 }
 
 #[tauri::command]
@@ -269,16 +269,17 @@ pub fn derive_theme(
     name: String,
 ) -> AppResult<ThemeSummary> {
     let store = state.themes();
-    let base = store
-        .get(&theme.meta.id)
-        .ok_or_else(|| AppError::not_found("Тема не найдена"))?;
-    let mut derived = crate::theme::store::derive_from(&base, &name, "sifora:user", None);
+    // Fork *the spec that was sent*, not a fresh copy of the stored theme: this
+    // is how "edit a built-in" works, and re-reading the stored version would
+    // silently discard every edit the user just made.
+    let mut derived = crate::theme::store::derive_from(&theme, &name, "sifora:user", None);
     let report = validate_theme(&mut derived);
     if !report.is_valid() {
         return Err(AppError::new(
             crate::error::ErrorKind::Theme,
             "Новая тема не прошла проверку",
-        ));
+        )
+        .with_detail(format!("{:?}", report.errors)));
     }
     let stored = store.insert(derived)?;
     Ok(crate::theme::defaults::summarize(&stored))

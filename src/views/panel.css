@@ -178,6 +178,12 @@
   gap: 0.5rem 1rem;
 }
 
+.sf-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.6rem 0.9rem;
+}
+
 /* Switch */
 .sf-switch {
   position: relative;

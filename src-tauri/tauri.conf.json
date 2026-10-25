@@ -35,7 +35,7 @@
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' asset: http://asset.localhost data: blob:",
+        "img-src": "'self' asset: http://asset.localhost data: blob: https://cdn.modrinth.com",
         "font-src": "'self' data:",
         "connect-src": "'self' ipc: http://ipc.localhost",
         "media-src": "'none'",
@@ -51,7 +51,7 @@
         "default-src": "'self'",
         "script-src": "'self' 'unsafe-inline' http://localhost:1420 http://localhost:1421",
         "style-src": "'self' 'unsafe-inline' http://localhost:1420",
-        "img-src": "'self' asset: http://asset.localhost data: blob:",
+        "img-src": "'self' asset: http://asset.localhost data: blob: https://cdn.modrinth.com",
         "font-src": "'self' data:",
         "connect-src": "'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1421",
         "object-src": "'none'",
@@ -65,7 +65,9 @@
         "enable": true,
         "scope": [
           "$APPDATA/backgrounds/*",
-          "$APPLOCALDATA/backgrounds/*"
+          "$APPLOCALDATA/backgrounds/*",
+          "$APPDATA/build-icons/*",
+          "$APPLOCALDATA/build-icons/*"
         ]
       }
     }
@@ -75,7 +77,7 @@
     "targets": ["nsis"],
     "category": "Utility",
     "shortDescription": "Minecraft launcher",
-    "longDescription": "Sifora Launcher — lightweight Minecraft launcher with a safe, AI-customisable design system.",
+    "longDescription": "Sifora Launcher — a lightweight Minecraft launcher with isolated builds, Fabric/Forge/NeoForge support and built-in Modrinth mod browsing.",
     "copyright": "Copyright (c) 2026 Sifora",
     "publisher": "Sifora",
     "windows": {

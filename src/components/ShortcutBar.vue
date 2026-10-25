@@ -6,7 +6,7 @@
  * place on the home screen. The list comes from the closed `Shortcut` enum —
  * there is no way for a theme to name an action the application does not have.
  */
-import { Boxes, Gauge, Image, Palette, ScrollText, Settings, Shuffle } from '@lucide/vue'
+import { Boxes, Gauge, Image, Palette, Puzzle, ScrollText, Settings, Shuffle } from '@lucide/vue'
 
 import { computed, type Component } from 'vue'
 
@@ -18,6 +18,7 @@ const emit = defineEmits<{ (e: 'run', shortcut: Shortcut): void }>()
 const ENTRIES: Record<Shortcut, { label: string; icon: Component }> = {
   appearance: { label: 'Оформление', icon: Palette },
   instances: { label: 'Сборки', icon: Boxes },
+  mods: { label: 'Моды', icon: Puzzle },
   settings: { label: 'Настройки', icon: Settings },
   log: { label: 'Журнал', icon: ScrollText },
   'random-theme': { label: 'Случайная тема', icon: Shuffle },

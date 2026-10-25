@@ -2,11 +2,12 @@
 //!
 //! Every function registered here is part of the product's functional contract:
 //! the UI can be hidden, a theme can be minimal, but the capability set itself
-//! is fixed at compile time and cannot be changed by any theme, any generated
-//! file or any renderer input.
+//! is fixed at compile time and cannot be changed by any theme file or any
+//! renderer input.
 
 pub mod app;
 pub mod backgrounds;
+pub mod builds;
 pub mod launch;
 pub mod theme;
 pub mod versions;
@@ -74,16 +75,30 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         versions::cached_version_ids,
         versions::summarise_versions,
         launch::version_details,
-        // install / launch
-        launch::install_version,
-        launch::launch_game,
+        // builds
+        builds::list_builds,
+        builds::create_build,
+        builds::update_build,
+        builds::delete_build,
+        builds::pick_build_icon,
+        builds::clear_build_icon,
+        builds::build_paths,
+        builds::loader_catalog,
+        builds::install_build,
+        builds::launch_build,
+        builds::build_mod_context,
+        // mods
+        builds::list_mods,
+        builds::install_mod,
+        builds::remove_mod,
+        builds::modrinth_tags,
+        builds::modrinth_search,
+        builds::modrinth_project,
+        builds::modrinth_versions,
+        // game process
         launch::game_status,
         launch::game_session,
         launch::stop_game,
-        launch::list_instances,
-        launch::update_instance_settings,
-        launch::delete_instance,
-        launch::instance_paths,
         // themes
         theme::list_themes,
         theme::get_theme,
@@ -96,13 +111,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         theme::undo_theme,
         theme::reset_theme,
         theme::delete_theme,
-        theme::generate_theme,
-        theme::get_ai_config,
-        theme::set_ai_config,
-        theme::list_provider_presets,
-        theme::list_ai_models,
-        theme::test_ai_connection,
         theme::derive_theme,
+        theme::export_theme,
+        theme::import_theme,
         theme::validate_theme_command,
         theme::theme_contrast,
         theme::default_theme_spec,

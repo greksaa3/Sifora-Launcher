@@ -16,15 +16,16 @@
 //!   the underlying command stays callable, because visibility and capability
 //!   are two different layers.
 //!
-//! Every struct uses `deny_unknown_fields`, so anything an AI model invents
-//! beyond the schema is a hard error instead of a silent injection vector.
+//! Every struct uses `deny_unknown_fields`, so anything a hand-edited file or a
+//! future format adds beyond the schema is a hard error instead of a silent
+//! injection vector.
 
 use super::color::Color;
 use serde::{Deserialize, Serialize};
 
 pub const THEME_SCHEMA: u32 = 1;
 
-/// Longest free-text values we ever keep from a generated theme.
+/// Longest free-text values we ever keep from a theme file.
 const MAX_NAME: usize = 48;
 const MAX_DESCRIPTION: usize = 240;
 const MAX_PROMPT: usize = 1200;
@@ -432,14 +433,16 @@ pub struct Tokens {
 pub enum Section {
     Appearance,
     Instances,
+    Mods,
     Settings,
     About,
 }
 
 impl Section {
-    pub const ALL: [Section; 4] = [
+    pub const ALL: [Section; 5] = [
         Section::Appearance,
         Section::Instances,
+        Section::Mods,
         Section::Settings,
         Section::About,
     ];
@@ -455,6 +458,7 @@ impl Section {
 pub enum Shortcut {
     Appearance,
     Instances,
+    Mods,
     Settings,
     Log,
     RandomTheme,
@@ -463,9 +467,10 @@ pub enum Shortcut {
 }
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 7] = [
+    pub const ALL: [Shortcut; 8] = [
         Shortcut::Appearance,
         Shortcut::Instances,
+        Shortcut::Mods,
         Shortcut::Settings,
         Shortcut::Log,
         Shortcut::RandomTheme,
